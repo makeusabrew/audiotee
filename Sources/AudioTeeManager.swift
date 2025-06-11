@@ -40,7 +40,7 @@ class AudioTeeManager {
     deviceID = try createAggregateDevice()
 
     guard let tapID = tapID, let deviceID = deviceID else {
-      throw AudioTapError.setupFailed
+      throw AudioTeeError.setupFailed
     }
 
     try addTapToAggregateDevice(tapID: tapID, deviceID: deviceID)
@@ -89,7 +89,7 @@ class AudioTeeManager {
       "AudioHardwareCreateProcessTap completed", context: ["status": String(status)])
     guard status == kAudioHardwareNoError else {
       Logger.error("Failed to create audio tap", context: ["status": String(status)])
-      throw AudioTapError.tapCreationFailed(status)
+      throw AudioTeeError.tapCreationFailed(status)
     }
 
     // Get the format of the audio tap
@@ -128,7 +128,7 @@ class AudioTeeManager {
 
     guard status == kAudioHardwareNoError else {
       Logger.error("Failed to create aggregate device", context: ["status": String(status)])
-      throw AudioTapError.aggregateDeviceCreationFailed(status)
+      throw AudioTeeError.aggregateDeviceCreationFailed(status)
     }
 
     return deviceID
@@ -156,14 +156,14 @@ class AudioTeeManager {
     guard status == kAudioHardwareNoError else {
       Logger.error(
         "Failed to add tap to aggregate device", context: ["status": String(status)])
-      throw AudioTapError.tapAssignmentFailed(status)
+      throw AudioTeeError.tapAssignmentFailed(status)
     }
   }
 }
 
 // MARK: - Error Types
 
-enum AudioTapError: Error {
+enum AudioTeeError: Error {
   case setupFailed
   case tapCreationFailed(OSStatus)
   case aggregateDeviceCreationFailed(OSStatus)
