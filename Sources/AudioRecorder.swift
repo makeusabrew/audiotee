@@ -13,7 +13,6 @@ public class AudioRecorder {
   private var deviceID: AudioObjectID
   private var ioProcID: AudioDeviceIOProcID?
   private var streamFormat: AudioStreamBasicDescription?
-  private var hasStartedBinaryStream = false
 
   // Buffer to accumulate audio data
   private var audioBuffer: Data = Data()
@@ -43,7 +42,6 @@ public class AudioRecorder {
     // Send metadata and stream start using the unified API
     Logger.writeMessage(.metadata, data: metadata)
     Logger.writeMessage(.streamStart, data: Optional<String>.none)
-    hasStartedBinaryStream = true
   }
 
   public func startRecording() {
