@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct AudioPacket: Codable {
+public struct AudioPacket: Codable {
   let timestamp: Date
   let duration: Double
   let peakAmplitude: Float
