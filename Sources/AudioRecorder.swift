@@ -5,7 +5,6 @@
 //  Created by Nick Payne on 11/06/2025.
 //
 
-
 import AudioToolbox
 import CoreAudio
 import Foundation
@@ -59,7 +58,7 @@ public class AudioRecorder {
   public func startRecording() {
     MessageWriter.debug("Getting device format")
     // Get the device's native stream format
-    var propertyAddress = AudioUtilities.getPropertyAddress(
+    var propertyAddress = getPropertyAddress(
       selector: kAudioDevicePropertyStreamFormat,
       scope: kAudioDevicePropertyScopeInput)
     var propertySize = UInt32(MemoryLayout<AudioStreamBasicDescription>.stride)
@@ -73,7 +72,7 @@ public class AudioRecorder {
 
     // Store and use the device's native format - no conversion
     self.streamFormat = streamFormat
-    
+
     MessageWriter.debug(
       "Using device's native format",
       context: [
@@ -124,24 +123,24 @@ public class AudioRecorder {
 
   private func processAudioChunk() -> AudioPacket? {
     guard let streamFormat = streamFormat else { return nil }
-    
+
     let bytesPerFrame = Int(streamFormat.mBytesPerFrame)
     let samplesPerChunk = Int(streamFormat.mSampleRate * targetChunkDuration)
     let bytesPerChunk = samplesPerChunk * bytesPerFrame
-    
+
     guard audioBuffer.count >= bytesPerChunk else { return nil }
 
     // Get the chunk data without any conversion
     let chunkData = audioBuffer.prefix(bytesPerChunk)
-    
+
     // Create the audio packet with raw data
     let packet = AudioPacket(
       timestamp: Date(),
       duration: Double(samplesPerChunk) / streamFormat.mSampleRate,
       peakAmplitude: 0.0,  // No analysis in raw mode
-      rmsAmplitude: 0.0,   // No analysis in raw mode
-      zeroCrossings: 0,    // No analysis in raw mode
-      dcOffset: 0.0,       // No analysis in raw mode
+      rmsAmplitude: 0.0,  // No analysis in raw mode
+      zeroCrossings: 0,  // No analysis in raw mode
+      dcOffset: 0.0,  // No analysis in raw mode
       clippingRatio: 0.0,  // No analysis in raw mode
       audioData: chunkData.base64EncodedString()
     )
@@ -193,7 +192,7 @@ public class AudioRecorder {
         clippingRatio: 0.0,
         audioData: audioBuffer.base64EncodedString()
       )
-      
+
       let message = AudioPacketMessage(type: .audio, data: packet)
       do {
         try MessageWriter.writeMessage(message)
