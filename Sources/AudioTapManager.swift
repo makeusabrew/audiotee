@@ -74,7 +74,7 @@ struct AudioTapManager {
     let uid = UUID().uuidString
     let description =
       [
-        kAudioAggregateDeviceNameKey: "tower-audio-aggregate-device",
+        kAudioAggregateDeviceNameKey: "audiotee-aggregate-device",
         kAudioAggregateDeviceUIDKey: uid,
         kAudioAggregateDeviceSubDeviceListKey: [] as CFArray,
         kAudioAggregateDeviceMasterSubDeviceKey: 0,
@@ -116,28 +116,6 @@ struct AudioTapManager {
       MessageWriter.error(
         "Failed to add tap to aggregate device", context: ["status": String(status)])
       fatalError("Failed to add tap to aggregate device: \(status)")
-    }
-  }
-
-  static func destroyProcessTap(_ tapID: AudioObjectID) {
-    MessageWriter.debug("Destroying process tap", context: ["tap_id": String(tapID)])
-    let status = AudioHardwareDestroyProcessTap(tapID)
-    
-    if status != kAudioHardwareNoError {
-      MessageWriter.error("Failed to destroy process tap", context: ["status": String(status)])
-    } else {
-      MessageWriter.debug("Process tap destroyed successfully")
-    }
-  }
-
-  static func destroyAggregateDevice(_ deviceID: AudioObjectID) {
-    MessageWriter.debug("Destroying aggregate device", context: ["device_id": String(deviceID)])
-    let status = AudioHardwareDestroyAggregateDevice(deviceID)
-    
-    if status != kAudioHardwareNoError {
-      MessageWriter.error("Failed to destroy aggregate device", context: ["status": String(status)])
-    } else {
-      MessageWriter.debug("Aggregate device destroyed successfully")
     }
   }
 }

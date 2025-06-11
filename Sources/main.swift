@@ -1,4 +1,5 @@
 import Foundation
+import AudioToolbox
 
 extension FileHandle {
     static let standardError = FileHandle.standardError
@@ -41,8 +42,8 @@ func run() {
 
     MessageWriter.info("Shutting down...")
     recorder.stopRecording()
-    AudioTapManager.destroyProcessTap(tapID)
-    AudioTapManager.destroyAggregateDevice(deviceID)
+    AudioHardwareDestroyProcessTap(tapID)
+    AudioHardwareDestroyAggregateDevice(deviceID)
 }
 
 run()
