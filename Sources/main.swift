@@ -1,5 +1,5 @@
-import Foundation
 import AudioToolbox
+import Foundation
 
 extension FileHandle {
     static let standardError = FileHandle.standardError
@@ -20,18 +20,27 @@ func signalHandler(_ signal: Int32) {
 
 func run() {
     MessageWriter.info("Starting program...")
-    
+
     signal(SIGINT, signalHandler)
     signal(SIGTERM, signalHandler)
-    
-    let tapID = AudioTapManager.createSystemAudioTap()
-    let deviceID = AudioTapManager.createAggregateDevice()
-    
-    AudioTapManager.addTapToAggregateDevice(tapID: tapID, deviceID: deviceID)
-    
+
+    let audioTapManager = AudioTapManager()
+    do {
+        try audioTapManager.setupAudioTap()
+    } catch {
+        MessageWriter.error(
+            "Failed to setup audio tap", context: ["error": String(describing: error)])
+        return
+    }
+
+    guard let deviceID = audioTapManager.getDeviceID() else {
+        MessageWriter.error("Failed to get device ID from audio tap manager")
+        return
+    }
+
     let recorder = AudioRecorder(deviceID: deviceID)
     recorder.startRecording()
-    
+
     // Run until the run loop is stopped (by signal handler)
     while true {
         let result = CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.1, false)
@@ -42,8 +51,7 @@ func run() {
 
     MessageWriter.info("Shutting down...")
     recorder.stopRecording()
-    AudioHardwareDestroyProcessTap(tapID)
-    AudioHardwareDestroyAggregateDevice(deviceID)
+
 }
 
 run()
