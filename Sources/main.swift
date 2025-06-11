@@ -24,7 +24,7 @@ func run() {
     signal(SIGINT, signalHandler)
     signal(SIGTERM, signalHandler)
 
-    let audioTapManager = AudioTapManager()
+    let audioTapManager = AudioTeeManager()
     do {
         try audioTapManager.setupAudioTap()
     } catch {

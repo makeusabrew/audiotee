@@ -10,7 +10,7 @@ import AudioToolbox
 import CoreAudio
 import Foundation
 
-class AudioTapManager {
+class AudioTeeManager {
   private var tapID: AudioObjectID?
   private var deviceID: AudioObjectID?
 
