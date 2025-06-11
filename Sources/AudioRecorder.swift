@@ -14,16 +14,18 @@ public class AudioRecorder {
   private var ioProcID: AudioDeviceIOProcID?
   private var streamFormat: AudioStreamBasicDescription?
   private var audioBuffer: AudioBuffer?
+  private var customFormat: AudioStreamBasicDescription?
 
-  public init(deviceID: AudioObjectID) {
+  public init(deviceID: AudioObjectID, customFormat: AudioStreamBasicDescription? = nil) {
     self.deviceID = deviceID
+    self.customFormat = customFormat
   }
 
   public func startRecording() {
     Logger.debug("Getting device format")
 
-    // Get the device's native stream format
-    let format = AudioFormatManager.getDeviceFormat(deviceID: deviceID)
+    // Use custom format if provided, otherwise get the device's native stream format
+    let format = customFormat ?? AudioFormatManager.getDeviceFormat(deviceID: deviceID)
     self.streamFormat = format
 
     // Set up the audio buffer

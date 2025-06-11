@@ -1,12 +1,13 @@
 # audiotee
 
-A command-line utility for capturing system audio on macOS and streaming it to stdout as JSON-delimited messages. Designed to be run as a child process for real-time audio streaming.
+A command-line utility for capturing system audio or microphone input on macOS and streaming it to stdout as JSON-delimited messages. Designed to be run as a child process for real-time audio streaming.
 
 ## Requirements
 
 - macOS >= 14.2
-- System audio recording permission
-- Grant your terminal emulator permissions via System Settings > Privacy & Security > Screen & System Audio Recording
+- For system audio: System audio recording permission
+- For microphone: Microphone access permission  
+- Grant your terminal emulator permissions via System Settings > Privacy & Security > Screen & System Audio Recording (for system audio) or Microphone (for mic input)
 
 ## Build
 
@@ -16,9 +17,21 @@ swift build -c release
 
 ## Run
 
+### System Audio Mode (Default)
+Captures all system audio output:
 ```bash
-.build/arm64-apple-macosx/release/tower-audio
+.build/arm64-apple-macosx/release/audiotee
+# or explicitly
+.build/arm64-apple-macosx/release/audiotee system
 ```
+
+### Microphone Mode  
+Captures microphone input with echo cancellation enabled:
+```bash
+.build/arm64-apple-macosx/release/audiotee mic
+```
+
+The echo cancellation is crucial for microphone recording as it prevents audio feedback loops and improves speech recognition quality.
 
 ## Protocol
 
@@ -78,7 +91,17 @@ Host programs should:
 
 ## Implementation
 
+### System Audio Mode
 Uses Core Audio HAL to create a process tap and aggregate device for system audio capture. Audio is streamed in 200ms chunks in the device's native format without any processing.
+
+### Microphone Mode  
+Uses Core Audio HAL with AudioUnit for microphone input with the following features:
+- **Echo cancellation enabled** via `kAUVoiceIOProperty_BypassVoiceProcessing` 
+- Continuous audio capture (no voice activity detection - streams everything)
+- Shared access (allows other apps to use microphone simultaneously)
+- Direct device access for minimal latency
+
+Audio is streamed in 200ms chunks in a consistent 16-bit mono format at 44.1kHz.
 
 ## References
 
