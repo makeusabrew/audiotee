@@ -1,6 +1,6 @@
 import Foundation
 
-class MessageWriter {
+class Logger {
   nonisolated(unsafe) private static let dateFormatter: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [

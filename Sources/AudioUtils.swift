@@ -15,7 +15,7 @@ func isAudioDeviceValid(_ deviceID: AudioObjectID) -> Bool {
 
   let valid = status == kAudioHardwareNoError && isAlive == 1
 
-  MessageWriter.debug(
+  Logger.debug(
     "Checked device validity",
     context: [
       "device_id": String(deviceID),

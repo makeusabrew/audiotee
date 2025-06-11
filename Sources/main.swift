@@ -14,12 +14,12 @@ extension String {
 }
 
 func signalHandler(_ signal: Int32) {
-    MessageWriter.info("Received signal \(signal), initiating graceful shutdown...")
+    Logger.info("Received signal \(signal), initiating graceful shutdown...")
     CFRunLoopStop(CFRunLoopGetMain())
 }
 
 func run() {
-    MessageWriter.info("Starting program...")
+    Logger.info("Starting program...")
 
     signal(SIGINT, signalHandler)
     signal(SIGTERM, signalHandler)
@@ -28,13 +28,13 @@ func run() {
     do {
         try audioTapManager.setupAudioTap()
     } catch {
-        MessageWriter.error(
+        Logger.error(
             "Failed to setup audio tap", context: ["error": String(describing: error)])
         return
     }
 
     guard let deviceID = audioTapManager.getDeviceID() else {
-        MessageWriter.error("Failed to get device ID from audio tap manager")
+        Logger.error("Failed to get device ID from audio tap manager")
         return
     }
 
@@ -49,7 +49,7 @@ func run() {
         }
     }
 
-    MessageWriter.info("Shutting down...")
+    Logger.info("Shutting down...")
     recorder.stopRecording()
 
 }

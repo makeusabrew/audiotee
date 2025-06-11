@@ -41,13 +41,13 @@ public class AudioRecorder {
     )
 
     // Send metadata and stream start using the unified API
-    MessageWriter.metadata(metadata)
-    MessageWriter.streamStart()
+    Logger.metadata(metadata)
+    Logger.streamStart()
     hasStartedBinaryStream = true
   }
 
   public func startRecording() {
-    MessageWriter.debug("Getting device format")
+    Logger.debug("Getting device format")
     // Get the device's native stream format
     var propertyAddress = getPropertyAddress(
       selector: kAudioDevicePropertyStreamFormat,
@@ -64,7 +64,7 @@ public class AudioRecorder {
     // Store and use the device's native format - no conversion
     self.streamFormat = streamFormat
 
-    MessageWriter.debug(
+    Logger.debug(
       "Using device's native format",
       context: [
         "channels": String(streamFormat.mChannelsPerFrame),
@@ -80,7 +80,7 @@ public class AudioRecorder {
     writeMetadata()
 
     // Start the IO proc
-    MessageWriter.debug("Creating IO proc")
+    Logger.debug("Creating IO proc")
     status = AudioDeviceCreateIOProcID(
       deviceID,
       {
@@ -98,7 +98,7 @@ public class AudioRecorder {
     }
 
     // Start the device
-    MessageWriter.debug("Starting audio device")
+    Logger.debug("Starting audio device")
     status = AudioDeviceStart(deviceID, ioProcID)
     if status != noErr {
       // Clean up if we failed to start
@@ -109,7 +109,7 @@ public class AudioRecorder {
       fatalError("Failed to start audio device: \(status). Device ID: \(deviceID)")
     }
 
-    MessageWriter.info("Audio device started successfully")
+    Logger.info("Audio device started successfully")
   }
 
   private func processAudioChunk() -> AudioPacket? {
@@ -158,7 +158,7 @@ public class AudioRecorder {
     // Process complete chunks
     while let packet = processAudioChunk() {
       // Send audio packet using the unified API
-      MessageWriter.audio(packet)
+      Logger.audio(packet)
     }
 
     return noErr
@@ -180,7 +180,7 @@ public class AudioRecorder {
       )
 
       // Send final audio packet using the unified API
-      MessageWriter.audio(packet)
+      Logger.audio(packet)
     }
 
     if let ioProcID = ioProcID {

@@ -19,7 +19,7 @@ class AudioTapManager {
   }
 
   deinit {
-    MessageWriter.debug("Cleaning up audio tap manager")
+    Logger.debug("Cleaning up audio tap manager")
 
     if let tapID = tapID {
       AudioHardwareDestroyProcessTap(tapID)
@@ -34,7 +34,7 @@ class AudioTapManager {
 
   /// Sets up the audio tap and aggregate device
   func setupAudioTap() throws {
-    MessageWriter.debug("Setting up audio tap manager")
+    Logger.debug("Setting up audio tap manager")
 
     tapID = try createSystemAudioTap()
     deviceID = try createAggregateDevice()
@@ -45,7 +45,7 @@ class AudioTapManager {
 
     try addTapToAggregateDevice(tapID: tapID, deviceID: deviceID)
 
-    MessageWriter.debug("Audio tap manager setup complete")
+    Logger.debug("Audio tap manager setup complete")
   }
 
   /// Returns the aggregate device ID for recording
@@ -54,7 +54,7 @@ class AudioTapManager {
   }
 
   private func createSystemAudioTap() throws -> AudioObjectID {
-    MessageWriter.debug("Creating tap description")
+    Logger.debug("Creating tap description")
     // Create a tap description
     let description = CATapDescription()
 
@@ -69,7 +69,7 @@ class AudioTapManager {
     description.deviceUID = nil  // Let the system choose the device
     description.stream = 0  // Main stream
 
-    MessageWriter.debug(
+    Logger.debug(
       "Tap description configured",
       context: [
         "name": description.name,
@@ -81,14 +81,14 @@ class AudioTapManager {
       ])
 
     // Create the tap
-    MessageWriter.debug("Creating tap with HAL")
+    Logger.debug("Creating tap with HAL")
     var tapID = AudioObjectID(kAudioObjectUnknown)
     let status = AudioHardwareCreateProcessTap(description, &tapID)
 
-    MessageWriter.debug(
+    Logger.debug(
       "AudioHardwareCreateProcessTap completed", context: ["status": String(status)])
     guard status == kAudioHardwareNoError else {
-      MessageWriter.error("Failed to create audio tap", context: ["status": String(status)])
+      Logger.error("Failed to create audio tap", context: ["status": String(status)])
       throw AudioTapError.tapCreationFailed(status)
     }
 
@@ -100,7 +100,7 @@ class AudioTapManager {
       tapID, &propertyAddress, 0, nil, &propertySize, &streamDescription)
 
     if formatStatus == noErr {
-      MessageWriter.debug(
+      Logger.debug(
         "Tap format retrieved",
         context: [
           "channels": String(streamDescription.mChannelsPerFrame),
@@ -127,7 +127,7 @@ class AudioTapManager {
     let status = AudioHardwareCreateAggregateDevice(description as CFDictionary, &deviceID)
 
     guard status == kAudioHardwareNoError else {
-      MessageWriter.error("Failed to create aggregate device", context: ["status": String(status)])
+      Logger.error("Failed to create aggregate device", context: ["status": String(status)])
       throw AudioTapError.aggregateDeviceCreationFailed(status)
     }
 
@@ -154,7 +154,7 @@ class AudioTapManager {
     }
 
     guard status == kAudioHardwareNoError else {
-      MessageWriter.error(
+      Logger.error(
         "Failed to add tap to aggregate device", context: ["status": String(status)])
       throw AudioTapError.tapAssignmentFailed(status)
     }
