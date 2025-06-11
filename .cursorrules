@@ -1,0 +1,76 @@
+This project is called AudioTee: it is a Swift CLI executable which allows the user to record system audio (via a tap+aggregate device it programatically creates) and streams that audio to stdout.
+
+It is designed to be executed as a child process by a host program which can stream its stdout as JSON-delimited audio chunks with a message envelope + base64 encoded audio data. The original intended use case was to send system audio to a Streaming ASR service (e.g. AssemblyAI, Speechmatics, etc).
+
+Some guidance on the Core Audio tap API from Apple:
+
+You create a tap by passing a CATapDescription to AudioHardwareCreateProcessTap. This returns an AudioObjectID for the new tap object. You can destroy a tap using AudioHardwareDestroyProcessTap:
+
+```
+// Create a tap description.
+let description = CATapDescription()
+
+
+// Fill out the description properties with the tap configuration from the UI.
+description.name = tapConfiguration.name
+description.processes = Array(tapConfiguration.processes)
+description.isPrivate = tapConfiguration.isPrivate
+description.muteBehavior = CATapMuteBehavior(rawValue: tapConfiguration.mute.rawValue) ?? description.muteBehavior
+description.isMixdown = tapConfiguration.mixdown == .mono || tapConfiguration.mixdown == .stereo
+description.isMono = tapConfiguration.mixdown == .mono
+description.isExclusive = tapConfiguration.exclusive
+description.deviceUID = tapConfiguration.device
+description.stream = tapConfiguration.streamIndex
+
+
+// Ask the HAL to create a new tap and put the resulting `AudioObjectID` in `tapID`.
+var tapID = AudioObjectID(kAudioObjectUnknown)
+AudioHardwareCreateProcessTap(description, &tapID)
+```
+
+You similarly create an aggregate device by passing a CFDictionary to AudioHardwareCreateAggregateDevice, and destroy it using AudioHardwareDestroyAggregateDevice.
+
+```
+let description = [kAudioAggregateDeviceNameKey: "Sample Aggregate Audio Device", kAudioAggregateDeviceUIDKey: UUID().uuidString]
+var id: AudioObjectID = 0
+AudioHardwareCreateAggregateDevice(description as CFDictionary, &id)
+```
+
+To use a tap as an input source, add it to an aggregate device that you configure for playback. First get the tap’s unique identifier by passing the kAudioTapPropertyUID selector and the tap’s audio object ID to AudioObjectGetPropertyData:
+
+```
+// Get the UID of the audio tap.
+var propertyAddress = getPropertyAddress(selector: kAudioTapPropertyUID)
+var propertySize = UInt32(MemoryLayout<CFString>.stride)
+var tapUID: CFString = "" as CFString
+_ = withUnsafeMutablePointer(to: &tapUID) { tapUID in
+    AudioObjectGetPropertyData(tapID, &propertyAddress, 0, nil, &propertySize, tapUID)
+}
+```
+
+Then use the kAudioAggregateDevicePropertyTapList selector to get and set the list of taps in an aggregate device. To add a tap, pass the tap’s audio object ID and a CFArray of CFString objects containing the tap’s unique identifier to AudioObjectSetPropertyData:
+
+```
+var propertyAddress = getPropertyAddress(selector: kAudioAggregateDevicePropertyTapList)
+var propertySize: UInt32 = 0
+AudioObjectGetPropertyDataSize(self.id, &propertyAddress, 0, nil, &propertySize)
+var list: CFArray? = nil
+_ = withUnsafeMutablePointer(to: &list) { list in
+    AudioObjectGetPropertyData(tapID, &propertyAddress, 0, nil, &propertySize, list)
+}
+
+
+if var listAsArray = list as? [CFString] {
+    // Add the new object ID if it's not already in the list.
+    if !listAsArray.contains(tapUID as CFString) {
+        listAsArray.append(tapUID as CFString)
+        propertySize += UInt32(MemoryLayout<CFString>.stride)
+    }
+
+    // Set the list back on the aggregate device.
+    list = listAsArray as CFArray
+    _ = withUnsafeMutablePointer(to: &list) { list in
+        AudioObjectSetPropertyData(tapID, &propertyAddress, 0, nil, propertySize, list)
+    }
+}
+```

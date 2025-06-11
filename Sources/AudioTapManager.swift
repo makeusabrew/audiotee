@@ -18,7 +18,7 @@ struct AudioTapManager {
     let description = CATapDescription()
 
     // Configure the tap to capture all system audio
-    description.name = "t2-tap"
+    description.name = "audiotee-tap"
     description.processes = []  // Empty array means capture all processes
     description.isPrivate = true
     description.muteBehavior = .unmuted

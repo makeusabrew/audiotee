@@ -4,7 +4,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "t2",
+    name: "audiotee",
     platforms: [
         .macOS("14.2")
     ],
