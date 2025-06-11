@@ -41,8 +41,8 @@ public class AudioRecorder {
     )
 
     // Send metadata and stream start using the unified API
-    Logger.metadata(metadata)
-    Logger.streamStart()
+    Logger.writeMessage(.metadata, data: metadata)
+    Logger.writeMessage(.streamStart, data: Optional<String>.none)
     hasStartedBinaryStream = true
   }
 

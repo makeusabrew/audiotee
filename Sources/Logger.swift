@@ -47,21 +47,6 @@ class Logger {
     writeMessage(.debug, data: logData)
   }
 
-  // Send stream metadata
-  static func metadata(_ metadata: AudioStreamMetadata) {
-    writeMessage(.metadata, data: metadata)
-  }
-
-  // Send stream start signal
-  static func streamStart() {
-    writeMessage(.streamStart, data: Optional<String>.none)
-  }
-
-  // Send stream stop signal
-  static func streamStop() {
-    writeMessage(.streamStop, data: Optional<String>.none)
-  }
-
   // Send audio packet
   static func audio(_ packet: AudioPacket) {
     writeMessage(.audio, data: packet)
