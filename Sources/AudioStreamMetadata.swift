@@ -5,7 +5,6 @@
 //  Created by Nick Payne on 11/06/2025.
 //
 
-
 import Foundation
 
 struct AudioStreamMetadata: Codable {
@@ -27,21 +26,5 @@ struct AudioStreamMetadata: Codable {
     case deviceName = "device_name"
     case deviceUID = "device_uid"
     case encoding
-  }
-}
-
-enum StreamMessageType: String, Codable {
-  case metadata
-  case streamStart = "stream_start"
-  case streamStop = "stream_stop"
-}
-
-struct StreamMessage<T: Codable>: Codable {
-  let type: StreamMessageType
-  let data: T?
-
-  enum CodingKeys: String, CodingKey {
-    case type = "message_type"
-    case data
   }
 }

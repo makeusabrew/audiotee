@@ -40,19 +40,10 @@ public class AudioRecorder {
       encoding: format.mFormatFlags & kAudioFormatFlagIsFloat != 0 ? "pcm_f32le" : "pcm_s16le"
     )
 
-    do {
-      // Send metadata message using the new format
-      let metadataMessage = StreamMessage(type: .metadata, data: metadata)
-      try MessageWriter.writeMessage(metadataMessage)
-
-      // Send stream start message using the new format
-      let startMessage = StreamMessage<String>(type: .streamStart, data: nil)
-      try MessageWriter.writeMessage(startMessage)
-
-      hasStartedBinaryStream = true
-    } catch {
-      "Error writing stream messages: \(error)".print(to: .standardError)
-    }
+    // Send metadata and stream start using the unified API
+    MessageWriter.metadata(metadata)
+    MessageWriter.streamStart()
+    hasStartedBinaryStream = true
   }
 
   public func startRecording() {
@@ -166,13 +157,8 @@ public class AudioRecorder {
 
     // Process complete chunks
     while let packet = processAudioChunk() {
-      // Create and write the packet message
-      let message = AudioPacketMessage(type: .audio, data: packet)
-      do {
-        try MessageWriter.writeMessage(message)
-      } catch {
-        "Error encoding audio packet: \(error)".print(to: .standardError)
-      }
+      // Send audio packet using the unified API
+      MessageWriter.audio(packet)
     }
 
     return noErr
@@ -193,12 +179,8 @@ public class AudioRecorder {
         audioData: audioBuffer.base64EncodedString()
       )
 
-      let message = AudioPacketMessage(type: .audio, data: packet)
-      do {
-        try MessageWriter.writeMessage(message)
-      } catch {
-        "Error encoding final audio packet: \(error)".print(to: .standardError)
-      }
+      // Send final audio packet using the unified API
+      MessageWriter.audio(packet)
     }
 
     if let ioProcID = ioProcID {

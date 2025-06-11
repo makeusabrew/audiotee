@@ -5,7 +5,6 @@
 //  Created by Nick Payne on 11/06/2025.
 //
 
-
 import Foundation
 
 struct AudioPacket: Codable {
@@ -27,21 +26,5 @@ struct AudioPacket: Codable {
     case dcOffset = "dc_offset"
     case clippingRatio = "clipping_ratio"
     case audioData = "audio_data"
-  }
-}
-
-enum AudioPacketType: String, Codable {
-  case metadata
-  case streamStart = "stream_start"
-  case audio
-}
-
-struct AudioPacketMessage: Codable {
-  let type: AudioPacketType
-  let data: AudioPacket?
-
-  enum CodingKeys: String, CodingKey {
-    case type = "message_type"
-    case data
   }
 }
