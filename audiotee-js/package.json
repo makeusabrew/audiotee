@@ -1,0 +1,61 @@
+{
+  "name": "audiotee-js",
+  "version": "1.0.0",
+  "description": "Node.js wrapper for AudioTee - capture macOS system audio using Core Audio taps",
+  "main": "index.js",
+  "scripts": {
+    "install": "node-pre-gyp install --fallback-to-build",
+    "build": "node scripts/build.js",
+    "test": "node test/test.js",
+    "package": "node-pre-gyp package",
+    "publish-binary": "node-pre-gyp publish",
+    "clean": "node-pre-gyp clean",
+    "lint": "eslint lib/ scripts/ test/ index.js",
+    "prepack": "npm run build"
+  },
+  "binary": {
+    "module_name": "audiotee",
+    "module_path": "./bin/",
+    "remote_path": "v{version}/",
+    "package_name": "audiotee-v{version}-{platform}-{arch}.tar.gz",
+    "host": "https://github.com/your-org/audiotee-js/releases/download/",
+    "napi_versions": []
+  },
+  "dependencies": {
+    "node-pre-gyp": "^0.17.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "scripts/build.js",
+    "README.md"
+  ],
+  "os": ["darwin"],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "keywords": [
+    "audio",
+    "macos",
+    "recording", 
+    "system-audio",
+    "core-audio",
+    "streaming",
+    "real-time",
+    "asr",
+    "speech-recognition"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/audiotee-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/audiotee-js/issues"
+  },
+  "homepage": "https://github.com/your-org/audiotee-js#readme",
+  "license": "MIT",
+  "author": "Your Name <your.email@example.com>"
+} 

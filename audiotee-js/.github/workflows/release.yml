@@ -1,0 +1,173 @@
+name: Build and Release AudioTee.js
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g., v1.0.0)"
+        required: true
+        default: "v1.0.0"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+            node: "18"
+          - os: macos-13
+            arch: x64
+            node: "18"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout audiotee-js
+        uses: actions/checkout@v4
+
+      - name: Checkout AudioTee (parent project)
+        uses: actions/checkout@v4
+        with:
+          repository: your-org/audiotee
+          path: audiotee
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v1
+        with:
+          swift-version: "5.9"
+
+      - name: Build AudioTee binary
+        run: |
+          cd audiotee
+          swift build -c release
+          ls -la .build/release/
+
+      - name: Install Node.js dependencies
+        run: |
+          npm ci
+
+      - name: Build AudioTee.js package
+        env:
+          AUDIOTEE_BINARY_PATH: ../audiotee/.build/release/audiotee
+        run: |
+          npm run build
+          ls -la bin/
+
+      - name: Test package
+        run: |
+          # Quick test to ensure the package loads and binary works
+          timeout 10s npm test quick || true
+
+      - name: Package binary for distribution
+        run: |
+          npm run package
+
+      - name: List package contents
+        run: |
+          ls -la build/
+
+      - name: Publish binary to GitHub releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run publish-binary
+
+  publish-npm:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # Update version to match release tag
+          npm version ${{ github.event.release.tag_name }} --no-git-tag-version
+          npm publish
+
+  test-installation:
+    needs: publish-npm
+    runs-on: macos-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Test npm installation
+        run: |
+          # Test that the package can be installed and works
+          npm install audiotee-js@${{ github.event.release.tag_name }}
+
+          # Create a simple test
+          cat > test-install.js << 'EOF'
+          const { AudioTeeStream } = require('audiotee-js');
+
+          console.log('✅ Package imported successfully');
+
+          const stream = new AudioTeeStream({
+            format: 'json',
+            chunkDuration: 0.1
+          });
+
+          console.log('✅ AudioTeeStream created successfully');
+
+          let metadataReceived = false;
+
+          stream.on('metadata', () => {
+            metadataReceived = true;
+            console.log('✅ Metadata received');
+            stream.stop();
+          });
+
+          stream.on('error', (error) => {
+            console.error('❌ Error:', error.message);
+            process.exit(1);
+          });
+
+          stream.on('close', () => {
+            if (metadataReceived) {
+              console.log('✅ Installation test passed!');
+              process.exit(0);
+            } else {
+              console.error('❌ No metadata received');
+              process.exit(1);
+            }
+          });
+
+          setTimeout(() => {
+            console.error('❌ Test timeout');
+            stream.stop();
+            process.exit(1);
+          }, 5000);
+
+          console.log('🚀 Starting AudioTee...');
+          stream.start();
+          EOF
+
+          node test-install.js

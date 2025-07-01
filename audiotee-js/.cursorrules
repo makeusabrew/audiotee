@@ -1,0 +1,119 @@
+# AudioTee.js - Node.js Audio Streaming Package
+
+This is a Node.js wrapper for AudioTee that provides a streaming interface to capture macOS system audio using Core Audio taps.
+
+## Project Context
+
+- **Purpose**: Node.js package that wraps the AudioTee Swift binary via child processes
+- **Target**: macOS 14.2+ with Node.js 14+
+- **Use cases**: Real-time audio processing, ASR integration, Electron apps
+- **Distribution**: npm package using node-pre-gyp for binary distribution
+
+## Architecture
+
+- `index.js` - Main entry point, uses node-pre-gyp to locate binary
+- `lib/AudioTeeStream.js` - Core streaming class that wraps AudioTee process
+- `scripts/build.js` - Build script that copies AudioTee binary for distribution
+- `test/test.js` - Test suite demonstrating usage
+
+## Technical Standards
+
+### Code Style
+- Use functional programming patterns where possible
+- Prefer `const` over `let`, avoid `var`
+- Use arrow functions for callbacks and short functions
+- No semicolons at end of lines (per user preference)
+- Use template literals for string interpolation
+- Prefer British English spelling (colour, realise, etc.)
+
+### Node.js Specific
+- Use EventEmitter pattern for streaming interfaces
+- Handle child process lifecycle carefully (spawn, kill, cleanup)
+- Use Buffer for binary data, not Uint8Array
+- Implement proper error handling with descriptive messages
+- Use readline interface for line-based protocol parsing
+- Handle both JSON and binary protocol modes correctly
+
+### Error Handling
+- Always emit errors via EventEmitter, don't throw synchronously
+- Provide context in error messages (PIDs, file paths, etc.)
+- Handle child process errors gracefully
+- Validate input parameters and provide helpful error messages
+
+### Protocol Implementation
+- Correctly parse the mixed JSON/binary protocol from AudioTee
+- Handle partial reads and buffer management for binary mode
+- Emit events in the correct order (metadata → stream_start → audio → stream_stop)
+- Preserve AudioTee's timestamp and metadata information
+
+### Dependencies
+- Minimize external dependencies (currently only node-pre-gyp)
+- Use only Node.js built-in modules where possible
+- Ensure compatibility with Node.js 14+ (no newer APIs)
+
+### Documentation
+- Comprehensive JSDoc comments for public APIs
+- Examples in README showing real-world usage patterns
+- Clear event documentation with payload structure
+- Error scenarios and troubleshooting guidance
+
+### Testing
+- Provide both interactive and automated test modes
+- Test should work without requiring audio playback
+- Handle permissions issues gracefully in tests
+- Verify binary protocol parsing works correctly
+
+## Binary Distribution
+
+- Use node-pre-gyp for professional binary distribution
+- Support both Intel and Apple Silicon Macs
+- Graceful fallback if binary download fails
+- Verify binary functionality during build process
+
+## Development Guidelines
+
+When making changes:
+
+1. **Test thoroughly** - Both JSON and binary protocols
+2. **Handle edge cases** - Process crashes, permission issues, etc.
+3. **Maintain compatibility** - Don't break existing APIs
+4. **Update documentation** - Keep README examples current
+5. **Follow semantic versioning** - Breaking changes require major version bump
+
+## Common Patterns
+
+### Error Handling
+```javascript
+// Always emit errors, don't throw
+this.emit('error', new Error(`Descriptive message: ${details}`))
+
+// Provide context in errors
+this.emit('error', new Error(`Failed to start AudioTee: ${error.message}`))
+```
+
+### Event Emission
+```javascript
+// Use consistent event structure
+this.emit('audio', {
+  timestamp: new Date(),
+  duration: number,
+  peakAmplitude: number,
+  audioData: Buffer
+})
+```
+
+### Process Management
+```javascript
+// Always check process state before operations
+if (this.process && !this.process.killed) {
+  this.process.kill('SIGTERM')
+}
+```
+
+## Future Considerations
+
+- Support for multiple concurrent streams
+- WebSocket streaming interface
+- TypeScript definitions
+- React/Vue.js integration examples
+- Performance monitoring and metrics 

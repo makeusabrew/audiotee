@@ -1,0 +1,57 @@
+# Source control
+.git/
+.gitignore
+
+# Development files
+.cursorrules
+.github/
+test/
+coverage/
+*.test.js
+
+# Build artifacts (included via files in package.json)
+build/
+.build/
+
+# Dependencies
+node_modules/
+
+# Documentation (README.md is included via package.json files)
+docs/
+examples/
+
+# Environment and config files
+.env*
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime
+*.pid
+*.seed
+*.pid.lock
+
+# Mac files
+.DS_Store
+.DS_Store?
+._*
+
+# Test output
+test-recordings/
+*.raw
+*.wav
+
+# Temporary files
+tmp/
+temp/
+
+# CI/CD artifacts that aren't needed in the package
+.github/workflows/ 
