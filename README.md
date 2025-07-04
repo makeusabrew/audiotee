@@ -35,18 +35,6 @@ swift build -c release
 
 ## Usage
 
-### Permission management
-
-AudioTee requires system audio recording permissions to work. Use these commands to check and request permissions:
-
-```bash
-# Check current audio recording permissions
-./audiotee --permissions
-
-# Request audio recording permissions (will prompt user)
-./audiotee --permissions --request
-```
-
 ### Basic usage
 
 Replace the path below with `.build/<arch>/<target>/audiotee`, e.g. `build/arm64-apple-macosx/release/audiotee` for a release build on Apple Silicon.
@@ -255,13 +243,35 @@ Info, error, and debug messages (useful for monitoring):
 
 ## Permissions
 
-There is no provision in the code to pre-emptively check for the required `NSAudioCaptureUsageDescription` permission,
-so you'll be prompted the first time AudioTee tries to record anything. If you want to check and/or request permissions ahead of time, check out [AudioCap's clever TCC probing approach](https://github.com/insidegui/AudioCap/blob/main/AudioCap/ProcessTap/AudioRecordingPermission.swift).
+AudioTee requires system audio recording permissions to function. You can handle these permissions in two ways:
+
+### Lazy permissions (default approach)
+
+Simply run `./audiotee` and you'll be prompted for permissions the first time AudioTee tries to record audio from the tap. Note that some terminal emulators (at least `iTerm`) will **not** prompt at all, nor will the process fail: instead, AudioTee will happily run but will record a stream of empty data. The built in macOS terminal **does** prompt for permissions and blocks until granted.
+
+### Explicit permissions management
+
+Use the `--permissions` flag to check or request permissions ahead of time:
+
+```bash
+# Check current permission status
+./audiotee --permissions
+
+# Request permissions with user prompt
+./audiotee --permissions --request
+```
+
+Note that the same caveat as above exists here regarding terminal emulators. If you know why, or how to fix it, please help out.
+
+**Exit codes** indicate permission status, making this approach ideal for scripting:
+- `0`: Permissions granted
+- `1`: Permission status unknown  
+- `2`: Permissions denied
 
 ## References
 
 - [Apple Core Audio Taps Documentation](https://developer.apple.com/documentation/coreaudio/capturing-system-audio-with-core-audio-taps)
-- [AudioCap Implementation](https://github.com/insidegui/AudioCap)
+- [AudioCap Implementation](https://github.com/insidegui/AudioCap) - in particular, their awesome TCC probing approach to check for the audio capture permissions, which AudioTee lifts almost in its entirety. Thank you.
 
 ## License
 
