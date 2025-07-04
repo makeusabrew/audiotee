@@ -35,25 +35,34 @@ final class AudioRecordingPermission {
   func request() {
     #if ENABLE_TCC_SPI
       // logger.debug(#function)
+      print("DEBUG: TCC SPI request called")
 
       guard let request = Self.requestSPI else {
         // logger.fault("Request SPI missing")
+        print("DEBUG: Request SPI is nil - TCC framework loading failed")
         return
       }
 
+      print("DEBUG: Calling TCC request function...")
       request("kTCCServiceAudioCapture" as CFString, nil) { [weak self] granted in
         guard let self else { return }
 
         // self.logger.info("Request finished with result: \(granted, privacy: .public)")
+        print("DEBUG: TCC request completed with result: \(granted)")
 
         DispatchQueue.main.async {
+          print("DEBUG: Updating status on main queue...")
           if granted {
             self.status = .authorized
+            print("DEBUG: Status set to authorized")
           } else {
             self.status = .denied
+            print("DEBUG: Status set to denied")
           }
         }
       }
+    #else
+      print("DEBUG: ENABLE_TCC_SPI not defined")
     #endif  // ENABLE_TCC_SPI
   }
 
@@ -87,12 +96,15 @@ final class AudioRecordingPermission {
     /// `dlopen` handle to the TCC framework.
     private static let apiHandle: UnsafeMutableRawPointer? = {
       let tccPath = "/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC"
+      print("DEBUG: Attempting to load TCC framework from: \(tccPath)")
 
       guard let handle = dlopen(tccPath, RTLD_NOW) else {
+        print("DEBUG: dlopen failed for TCC framework")
         assertionFailure("dlopen failed")
         return nil
       }
 
+      print("DEBUG: TCC framework loaded successfully")
       return handle
     }()
 
@@ -114,15 +126,21 @@ final class AudioRecordingPermission {
 
     /// `dlsym` function handle for `TCCAccessRequest`.
     private static let requestSPI: RequestFuncType? = {
-      guard let apiHandle else { return nil }
+      guard let apiHandle else {
+        print("DEBUG: No API handle for TCCAccessRequest")
+        return nil
+      }
 
       let fnName = "TCCAccessRequest"
+      print("DEBUG: Looking for symbol: \(fnName)")
 
       guard let funcSym = dlsym(apiHandle, fnName) else {
+        print("DEBUG: Couldn't find symbol: \(fnName)")
         assertionFailure("Couldn't find symbol")
         return nil
       }
 
+      print("DEBUG: Found TCCAccessRequest symbol successfully")
       let fn = unsafeBitCast(funcSym, to: RequestFuncType.self)
 
       return fn

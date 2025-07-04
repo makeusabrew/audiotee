@@ -8,6 +8,8 @@ struct AudioTee {
   var mute: Bool = false
   var sampleRate: Double?
   var chunkDuration: Double = 0.2
+  var permissionsMode: Bool = false
+  var requestPermissions: Bool = false
 
   init() {}
 
@@ -17,6 +19,10 @@ struct AudioTee {
       abstract: "Capture system audio and stream to stdout",
       discussion: """
         AudioTee captures system audio using Core Audio taps and streams it as structured output.
+
+        Permission modes:
+        • --permissions: Check current audio recording permissions
+        • --permissions --request: Request audio recording permissions
 
         Output formats:
         • json: Base64-encoded audio in JSON messages (safe for terminals)
@@ -29,6 +35,8 @@ struct AudioTee {
         • mute: How to handle processes being tapped
 
         Examples:
+          audiotee --permissions                # Check audio recording permissions
+          audiotee --permissions --request      # Request audio recording permissions
           audiotee                              # Auto format, tap all processes
           audiotee --format=json                # Always use JSON format
           audiotee --format=binary              # Always use binary format
@@ -42,6 +50,8 @@ struct AudioTee {
     )
 
     // Configure arguments
+    parser.addFlag(name: "permissions", help: "Check audio recording permissions")
+    parser.addFlag(name: "request", help: "Request permissions (use with --permissions)")
     parser.addOption(name: "format", shortName: "f", help: "Output format", defaultValue: "auto")
     parser.addArrayOption(
       name: "include-processes",
@@ -62,6 +72,8 @@ struct AudioTee {
       var audioTee = AudioTee()
 
       // Extract values
+      audioTee.permissionsMode = parser.getFlag("permissions")
+      audioTee.requestPermissions = parser.getFlag("request")
       audioTee.format = try parser.getValue("format", as: OutputFormat.self)
       audioTee.includeProcesses = try parser.getArrayValue("include-processes", as: Int32.self)
       audioTee.excludeProcesses = try parser.getArrayValue("exclude-processes", as: Int32.self)
@@ -96,9 +108,21 @@ struct AudioTee {
       throw ArgumentParserError.validationFailed(
         "Cannot specify both --include-processes and --exclude-processes")
     }
+
+    if requestPermissions && !permissionsMode {
+      throw ArgumentParserError.validationFailed(
+        "--request can only be used with --permissions")
+    }
   }
 
   func run() throws {
+    // Handle permissions mode
+    if permissionsMode {
+      try handlePermissions()
+      return
+    }
+
+    // Continue with normal audio tapping functionality
     setupSignalHandlers()
 
     Logger.info("Starting AudioTee...")
@@ -159,6 +183,44 @@ struct AudioTee {
 
     Logger.info("Shutting down...")
     recorder.stopRecording()
+  }
+
+  private func handlePermissions() throws {
+    let permissionHandler = AudioRecordingPermission()
+
+    if requestPermissions {
+      // Request permissions
+      print("Requesting audio recording permissions...")
+      print("Initial status: \(permissionHandler.status.rawValue)")
+
+      // Trigger the request
+      permissionHandler.request()
+      print("Request method called...")
+
+      // Wait for status to change from unknown with some progress indication
+      var waitCount = 0
+      while permissionHandler.status == .unknown {
+        // Run the main run loop to allow DispatchQueue.main.async to execute
+        let result = CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.1, true)
+        if result == CFRunLoopRunResult.stopped || result == CFRunLoopRunResult.finished {
+          break
+        }
+
+        waitCount += 1
+        if waitCount % 50 == 0 {  // Every 5 seconds (50 * 0.1)
+          print(
+            "Still waiting for permission response... (status: \(permissionHandler.status.rawValue))"
+          )
+        }
+      }
+
+      print("Permission status: \(permissionHandler.status.rawValue)")
+
+    } else {
+      // Just check current permissions
+      let status = permissionHandler.status
+      print("Current permission status: \(status.rawValue)")
+    }
   }
 
   private func setupSignalHandlers() {

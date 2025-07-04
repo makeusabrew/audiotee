@@ -35,6 +35,18 @@ swift build -c release
 
 ## Usage
 
+### Permission management
+
+AudioTee requires system audio recording permissions to work. Use these commands to check and request permissions:
+
+```bash
+# Check current audio recording permissions
+./audiotee --permissions
+
+# Request audio recording permissions (will prompt user)
+./audiotee --permissions --request
+```
+
 ### Basic usage
 
 Replace the path below with `.build/<arch>/<target>/audiotee`, e.g. `build/arm64-apple-macosx/release/audiotee` for a release build on Apple Silicon.

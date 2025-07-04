@@ -13,7 +13,13 @@ let package = Package(
             name: "audiotee",
             swiftSettings: [
                 .define("ENABLE_TCC_SPI")
-            ]
-        )
+            ])
+        // linkerSettings: [
+        //     .unsafeFlags([
+        //         "-Xlinker", "-sectcreate",
+        //         "-Xlinker", "__TEXT",
+        //         "-Xlinker", "__info_plist",
+        //         "-Xlinker", "Resources/Info.plist",
+        //     ])
     ]
 )
