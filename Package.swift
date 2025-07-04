@@ -9,6 +9,11 @@ let package = Package(
         .macOS("14.2")
     ],
     targets: [
-        .executableTarget(name: "audiotee")
+        .executableTarget(
+            name: "audiotee",
+            swiftSettings: [
+                .define("ENABLE_TCC_SPI")
+            ]
+        )
     ]
 )
