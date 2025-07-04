@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>NSAudioCaptureUsageDescription</key>
-	<string>This application requires access to system audio to record and stream audio output to external services such as speech recognition APIs.</string>
-</dict>
-</plist>

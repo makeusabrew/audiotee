@@ -118,8 +118,8 @@ struct AudioTee {
   func run() throws {
     // Handle permissions mode
     if permissionsMode {
-      try handlePermissions()
-      return
+      let permissionsHandler = PermissionsHandler(shouldRequest: requestPermissions)
+      permissionsHandler.handle()  // This will exit with appropriate code
     }
 
     // Continue with normal audio tapping functionality
@@ -183,44 +183,6 @@ struct AudioTee {
 
     Logger.info("Shutting down...")
     recorder.stopRecording()
-  }
-
-  private func handlePermissions() throws {
-    let permissionHandler = AudioRecordingPermission()
-
-    if requestPermissions {
-      // Request permissions
-      print("Requesting audio recording permissions...")
-      print("Initial status: \(permissionHandler.status.rawValue)")
-
-      // Trigger the request
-      permissionHandler.request()
-      print("Request method called...")
-
-      // Wait for status to change from unknown with some progress indication
-      var waitCount = 0
-      while permissionHandler.status == .unknown {
-        // Run the main run loop to allow DispatchQueue.main.async to execute
-        let result = CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.1, true)
-        if result == CFRunLoopRunResult.stopped || result == CFRunLoopRunResult.finished {
-          break
-        }
-
-        waitCount += 1
-        if waitCount % 50 == 0 {  // Every 5 seconds (50 * 0.1)
-          print(
-            "Still waiting for permission response... (status: \(permissionHandler.status.rawValue))"
-          )
-        }
-      }
-
-      print("Permission status: \(permissionHandler.status.rawValue)")
-
-    } else {
-      // Just check current permissions
-      let status = permissionHandler.status
-      print("Current permission status: \(status.rawValue)")
-    }
   }
 
   private func setupSignalHandlers() {
