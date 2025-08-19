@@ -3,10 +3,12 @@ import AudioToolbox
 import CoreAudio
 import Foundation
 
-class AudioTapManager {
+public class AudioTapManager {
   private var tapID: AudioObjectID?
   private var deviceID: AudioObjectID?
 
+  public init() {}
+  
   deinit {
     Logger.debug("Cleaning up audio tap manager")
 
@@ -22,7 +24,7 @@ class AudioTapManager {
   }
 
   /// Sets up the audio tap and aggregate device
-  func setupAudioTap(with config: TapConfiguration) throws {
+  public func setupAudioTap(with config: TapConfiguration) throws {
     Logger.debug("Setting up audio tap manager")
 
     tapID = try createSystemAudioTap(with: config)
@@ -38,7 +40,7 @@ class AudioTapManager {
   }
 
   /// Returns the aggregate device ID for recording
-  func getDeviceID() -> AudioObjectID? {
+  public func getDeviceID() -> AudioObjectID? {
     return deviceID
   }
 

@@ -10,7 +10,7 @@ public class AudioRecorder {
   private var outputHandler: AudioOutputHandler
   private var converter: AudioFormatConverter?
 
-  init(
+  public init(
     deviceID: AudioObjectID, outputHandler: AudioOutputHandler, convertToSampleRate: Double? = nil,
     chunkDuration: Double = 0.2
   ) {
@@ -51,7 +51,7 @@ public class AudioRecorder {
     }
   }
 
-  func startRecording() {
+  public func startRecording() {
     Logger.debug("Starting audio recording")
 
     // Log format info and send metadata for final format
@@ -112,7 +112,7 @@ public class AudioRecorder {
     return noErr
   }
 
-  func stopRecording() {
+  public func stopRecording() {
     processAudioBuffer()
     outputHandler.handleStreamStop()
     cleanupIOProc()
