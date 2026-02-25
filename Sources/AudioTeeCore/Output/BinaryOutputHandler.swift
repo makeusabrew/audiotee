@@ -1,12 +1,17 @@
 import Foundation
 
 public class BinaryAudioOutputHandler: AudioOutputHandler {
-  public init() {}
-  
+  private let flushAfterWrite: Bool
+
+  public init(flushAfterWrite: Bool = false) {
+    self.flushAfterWrite = flushAfterWrite
+  }
   public func handleAudioPacket(_ packet: AudioPacket) {
-    // TODO: should we use a DispatchQueue instead of writing directly?
     // Write raw binary audio data directly to stdout
     FileHandle.standardOutput.write(packet.data)
+    if flushAfterWrite {
+      fflush(stdout)
+    }
   }
 
   public func handleMetadata(_ metadata: AudioStreamMetadata) {
