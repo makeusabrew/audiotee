@@ -29,7 +29,7 @@ public class AudioBuffer {
 
   public func append(_ data: Data) {
     guard availableBytes + data.count <= maxBufferSize else {
-      Logger.error(
+      AudioTeeLogging.logger.error(
         "Audio buffer overflow",
         context: [
           "requested": String(data.count),

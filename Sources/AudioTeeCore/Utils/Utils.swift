@@ -15,7 +15,7 @@ func isAudioDeviceValid(_ deviceID: AudioObjectID) -> Bool {
 
   let valid = status == kAudioHardwareNoError && isAlive == 1
 
-  Logger.debug(
+  AudioTeeLogging.logger.debug(
     "Checked device validity",
     context: [
       "device_id": String(deviceID),
@@ -63,7 +63,7 @@ func translatePIDsToProcessObjects(_ pids: [Int32]) throws -> [AudioObjectID] {
 
     if status == kAudioHardwareNoError && processObject != kAudioObjectUnknown {
       processObjects.append(processObject)
-      Logger.debug(
+      AudioTeeLogging.logger.debug(
         "Translated PID to process object",
         context: [
           "pid": String(pid),
@@ -71,7 +71,7 @@ func translatePIDsToProcessObjects(_ pids: [Int32]) throws -> [AudioObjectID] {
         ])
     } else {
       failedPIDs.append(pid)
-      Logger.debug(
+      AudioTeeLogging.logger.debug(
         "Failed to translate PID to process object",
         context: [
           "pid": String(pid),
@@ -86,12 +86,4 @@ func translatePIDsToProcessObjects(_ pids: [Int32]) throws -> [AudioObjectID] {
   }
 
   return processObjects
-}
-
-extension String {
-  func print(to fileHandle: FileHandle) {
-    if let data = (self + "\n").data(using: .utf8) {
-      fileHandle.write(data)
-    }
-  }
 }

@@ -3,25 +3,25 @@ import CoreAudio
 import Foundation
 
 public class AudioFormatManager {
-  public static func getDeviceFormat(deviceID: AudioObjectID) -> AudioStreamBasicDescription {
+  public static func getDeviceFormat(deviceID: AudioObjectID) throws -> AudioStreamBasicDescription {
     // First, wait for the device to become alive/ready
     let deviceReadyTimeout = 2.0  // 2 seconds max wait
     let pollInterval = 0.1  // 100ms poll interval
     let maxPolls = Int(deviceReadyTimeout / pollInterval)
 
-    Logger.debug(
+    AudioTeeLogging.logger.debug(
       "Waiting for audio device to become ready", context: ["device_id": String(deviceID)])
 
     // Poll device readiness
     for poll in 1...maxPolls {
       if isAudioDeviceValid(deviceID) {
-        Logger.debug(
+        AudioTeeLogging.logger.debug(
           "Audio device is ready", context: ["device_id": String(deviceID), "polls": String(poll)])
         break
       }
 
       if poll == maxPolls {
-        Logger.info(
+        AudioTeeLogging.logger.info(
           "Device did not become ready within timeout, proceeding anyway",
           context: [
             "device_id": String(deviceID),
@@ -30,7 +30,7 @@ public class AudioFormatManager {
         break
       }
 
-      Logger.info("------- not ready; retrying...")
+      AudioTeeLogging.logger.info("------- not ready; retrying...")
 
       Thread.sleep(forTimeInterval: pollInterval)
     }
@@ -49,11 +49,11 @@ public class AudioFormatManager {
         deviceID, &propertyAddress, 0, nil, &propertySize, &streamFormat)
 
       if status == noErr {
-        Logger.debug("Successfully retrieved device format", context: ["attempt": String(attempt)])
+        AudioTeeLogging.logger.debug("Successfully retrieved device format", context: ["attempt": String(attempt)])
         return streamFormat
       }
 
-      Logger.info(
+      AudioTeeLogging.logger.info(
         "------- Failed to get stream format after device ready check, retrying...",
         context: [
           "attempt": String(attempt),
@@ -69,16 +69,14 @@ public class AudioFormatManager {
     }
 
     // If all attempts failed after device readiness confirmation, this is a genuine error
-    Logger.error(
+    AudioTeeLogging.logger.error(
       "Failed to get device format after device readiness check and retries",
       context: [
         "device_id": String(deviceID),
         "device_was_ready": "true",
       ])
 
-    fatalError(
-      "Failed to get stream format from ready device: \(deviceID). This indicates a Core Audio subsystem error."
-    )
+    throw AudioTeeError.deviceFormatUnavailable(deviceID)
   }
 
   static func createMetadata(for format: AudioStreamBasicDescription) -> AudioStreamMetadata {
@@ -94,14 +92,8 @@ public class AudioFormatManager {
     )
   }
 
-  public static func writeMetadata(for format: AudioStreamBasicDescription) {
-    let metadata = createMetadata(for: format)
-    Logger.writeMessage(.metadata, data: metadata)
-    Logger.writeMessage(.streamStart, data: Optional<String>.none)
-  }
-
   public static func logFormatInfo(_ format: AudioStreamBasicDescription) {
-    Logger.debug(
+    AudioTeeLogging.logger.debug(
       "Using device's native format",
       context: [
         "channels": String(format.mChannelsPerFrame),

@@ -10,15 +10,25 @@ public class AudioRecorder {
   private var outputHandler: AudioOutputHandler
   private var converter: AudioFormatConverter?
 
+  /// The audio format this recorder produces (after any conversion).
+  public var outputFormat: AudioStreamBasicDescription {
+    return finalFormat
+  }
+
+  /// Whether this recorder is performing sample rate conversion.
+  public var isConverting: Bool {
+    return converter != nil
+  }
+
   public init(
     deviceID: AudioObjectID, outputHandler: AudioOutputHandler, convertToSampleRate: Double? = nil,
     chunkDuration: Double = 0.2
-  ) {
+  ) throws {
     self.deviceID = deviceID
     self.outputHandler = outputHandler
 
     // Get source format and set up conversion if requested
-    let sourceFormat = AudioFormatManager.getDeviceFormat(deviceID: deviceID)
+    let sourceFormat = try AudioFormatManager.getDeviceFormat(deviceID: deviceID)
 
     // Set up the audio buffer using source format and configurable chunk duration
     self.audioBuffer = AudioBuffer(format: sourceFormat, chunkDuration: chunkDuration)
@@ -26,7 +36,7 @@ public class AudioRecorder {
     if let targetSampleRate = convertToSampleRate {
       // Validate sample rate
       guard AudioFormatConverter.isValidSampleRate(targetSampleRate) else {
-        Logger.error("Invalid sample rate", context: ["sample_rate": String(targetSampleRate)])
+        AudioTeeLogging.logger.error("Invalid sample rate", context: ["sample_rate": String(targetSampleRate)])
         self.converter = nil
         self.finalFormat = sourceFormat
         return
@@ -36,10 +46,10 @@ public class AudioRecorder {
         let converter = try AudioFormatConverter.toSampleRate(targetSampleRate, from: sourceFormat)
         self.converter = converter
         self.finalFormat = converter.targetFormatDescription
-        Logger.info(
+        AudioTeeLogging.logger.info(
           "Audio conversion enabled", context: ["target_sample_rate": String(targetSampleRate)])
       } catch {
-        Logger.error(
+        AudioTeeLogging.logger.error(
           "Failed to create audio converter, using original format",
           context: ["error": String(describing: error)])
         self.converter = nil
@@ -51,8 +61,8 @@ public class AudioRecorder {
     }
   }
 
-  public func startRecording() {
-    Logger.debug("Starting audio recording")
+  public func startRecording() throws {
+    AudioTeeLogging.logger.debug("Starting audio recording")
 
     // Log format info and send metadata for final format
     AudioFormatManager.logFormatInfo(finalFormat)
@@ -60,15 +70,15 @@ public class AudioRecorder {
     outputHandler.handleMetadata(metadata)
     outputHandler.handleStreamStart()
 
-    setupAndStartIOProc()
+    try setupAndStartIOProc()
 
-    Logger.info("Audio device started successfully")
+    AudioTeeLogging.logger.info("Audio device started successfully")
   }
 
   // Note to self, what about installTap? Would require audio engine and a node?
   // No; AudioEngine.installTap() can only fire as often as 100ms. too slow for us
-  private func setupAndStartIOProc() {
-    Logger.debug("Creating IO proc")
+  private func setupAndStartIOProc() throws {
+    AudioTeeLogging.logger.debug("Creating IO proc")
     var status = AudioDeviceCreateIOProcID(
       deviceID,
       {
@@ -82,15 +92,15 @@ public class AudioRecorder {
     )
 
     guard status == noErr else {
-      fatalError("Failed to create IO proc: \(status)")
+      throw AudioTeeError.ioProcCreationFailed(status)
     }
 
-    Logger.debug("Starting audio device")
+    AudioTeeLogging.logger.debug("Starting audio device")
     status = AudioDeviceStart(deviceID, ioProcID)
 
     if status != noErr {
       cleanupIOProc()
-      fatalError("Failed to start audio device: \(status). Device ID: \(deviceID)")
+      throw AudioTeeError.deviceStartFailed(status)
     }
   }
 
@@ -99,7 +109,7 @@ public class AudioRecorder {
     let firstBuffer = bufferList.mBuffers
 
     guard firstBuffer.mData != nil && firstBuffer.mDataByteSize > 0 else {
-      "Warning: Received empty audio buffer".print(to: .standardError)
+      AudioTeeLogging.logger.error("Received empty audio buffer")
       return noErr
     }
 
