@@ -8,6 +8,7 @@ struct AudioTee {
   var stereo: Bool = false
   var sampleRate: Double?
   var chunkDuration: Double = 0.2
+  var flush: Bool = false
 
   init() {}
 
@@ -31,6 +32,7 @@ struct AudioTee {
           audiotee --include-processes 1234 5678 9012  # Tap only these processes
           audiotee --exclude-processes 1234 5678       # Tap everything except these
           audiotee --mute                       # Mute processes being tapped
+          audiotee --flush                      # Flush stdout after each chunk
         """
     )
 
@@ -42,6 +44,7 @@ struct AudioTee {
       name: "exclude-processes", help: "Process IDs to exclude (space-separated)")
     parser.addFlag(name: "mute", help: "Mute processes being tapped")
     parser.addFlag(name: "stereo", help: "Records in stereo")
+    parser.addFlag(name: "flush", help: "Flush stdout after each audio chunk (reduces latency when piping)")
     parser.addOption(
       name: "sample-rate",
       help: "Target sample rate (8000, 16000, 22050, 24000, 32000, 44100, 48000)")
@@ -59,6 +62,7 @@ struct AudioTee {
       audioTee.excludeProcesses = try parser.getArrayValue("exclude-processes", as: Int32.self)
       audioTee.mute = parser.getFlag("mute")
       audioTee.stereo = parser.getFlag("stereo")
+      audioTee.flush = parser.getFlag("flush")
       audioTee.sampleRate = try parser.getOptionalValue("sample-rate", as: Double.self)
       audioTee.chunkDuration = try parser.getValue("chunk-duration", as: Double.self)
 
@@ -136,7 +140,7 @@ struct AudioTee {
       throw ExitCode.failure
     }
 
-    let outputHandler = BinaryAudioOutputHandler()
+    let outputHandler = BinaryAudioOutputHandler(flushAfterWrite: flush)
     let recorder = AudioRecorder(
       deviceID: deviceID, outputHandler: outputHandler, convertToSampleRate: sampleRate,
       chunkDuration: chunkDuration)
