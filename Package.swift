@@ -8,7 +8,37 @@ let package = Package(
   platforms: [
     .macOS("14.2")
   ],
+  products: [
+    // Library that can be imported by other packages
+    .library(
+      name: "AudioTeeCore",
+      targets: ["AudioTeeCore"]
+    ),
+    // CLI executable
+    .executable(
+      name: "audiotee",
+      targets: ["AudioTeeCLI"]
+    )
+  ],
   targets: [
-    .executableTarget(name: "audiotee")
+    // Core library with all business logic
+    .target(
+      name: "AudioTeeCore",
+      path: "Sources/AudioTeeCore"
+    ),
+    
+    // CLI executable that uses the library
+    .executableTarget(
+      name: "AudioTeeCLI",
+      dependencies: ["AudioTeeCore"],
+      path: "Sources/AudioTeeCLI"
+    ),
+    
+    // Tests for the library
+    .testTarget(
+      name: "AudioTeeCoreTests",
+      dependencies: ["AudioTeeCore"],
+      path: "Tests/AudioTeeCoreTests"
+    )
   ]
 )
