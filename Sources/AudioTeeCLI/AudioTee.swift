@@ -99,11 +99,11 @@ struct AudioTee {
   func run() throws {
     setupSignalHandlers()
 
-    Logger.info("Starting AudioTee...")
+    AudioTeeLogging.logger.info("Starting AudioTee...")
 
     // Validate chunk duration
     guard chunkDuration > 0 && chunkDuration <= 5.0 else {
-      Logger.error(
+      AudioTeeLogging.logger.error(
         "Invalid chunk duration",
         context: ["chunk_duration": String(chunkDuration), "valid_range": "0.0 < duration <= 5.0"])
       throw ExitCode.failure
@@ -123,7 +123,7 @@ struct AudioTee {
     do {
       try audioTapManager.setupAudioTap(with: tapConfig)
     } catch AudioTeeError.pidTranslationFailed(let failedPIDs) {
-      Logger.error(
+      AudioTeeLogging.logger.error(
         "Failed to translate process IDs to audio objects",
         context: [
           "failed_pids": failedPIDs.map(String.init).joined(separator: ", "),
@@ -131,21 +131,21 @@ struct AudioTee {
         ])
       throw ExitCode.failure
     } catch {
-      Logger.error(
+      AudioTeeLogging.logger.error(
         "Failed to setup audio tap", context: ["error": String(describing: error)])
       throw ExitCode.failure
     }
 
     guard let deviceID = audioTapManager.getDeviceID() else {
-      Logger.error("Failed to get device ID from audio tap manager")
+      AudioTeeLogging.logger.error("Failed to get device ID from audio tap manager")
       throw ExitCode.failure
     }
 
     let outputHandler = BinaryAudioOutputHandler(flushAfterWrite: flush)
-    let recorder = AudioRecorder(
+    let recorder = try AudioRecorder(
       deviceID: deviceID, outputHandler: outputHandler, convertToSampleRate: sampleRate,
       chunkDuration: chunkDuration)
-    recorder.startRecording()
+    try recorder.startRecording()
 
     // Run until the run loop is stopped (by signal handler)
     while true {
@@ -155,17 +155,17 @@ struct AudioTee {
       }
     }
 
-    Logger.info("Shutting down...")
+    AudioTeeLogging.logger.info("Shutting down...")
     recorder.stopRecording()
   }
 
   private func setupSignalHandlers() {
     signal(SIGINT) { _ in
-      Logger.info("Received SIGINT, initiating graceful shutdown...")
+      AudioTeeLogging.logger.info("Received SIGINT, initiating graceful shutdown...")
       CFRunLoopStop(CFRunLoopGetMain())
     }
     signal(SIGTERM) { _ in
-      Logger.info("Received SIGTERM, initiating graceful shutdown...")
+      AudioTeeLogging.logger.info("Received SIGTERM, initiating graceful shutdown...")
       CFRunLoopStop(CFRunLoopGetMain())
     }
   }

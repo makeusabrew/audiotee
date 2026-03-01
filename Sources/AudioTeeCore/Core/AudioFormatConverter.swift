@@ -28,7 +28,7 @@ public class AudioFormatConverter {
     self.targetFormat = targetAVFormat
     self.avConverter = converter
 
-    Logger.debug(
+    AudioTeeLogging.logger.debug(
       "Audio converter created",
       context: [
         "source_sample_rate": String(sourceAVFormat.sampleRate),
@@ -39,7 +39,7 @@ public class AudioFormatConverter {
 
     // Warn about upsampling once during initialization
     if targetAVFormat.sampleRate > sourceAVFormat.sampleRate {
-      Logger.info(
+      AudioTeeLogging.logger.info(
         "Upsampling audio - this doesn't add frequency content above the original Nyquist limit",
         context: [
           "source_rate": String(sourceAVFormat.sampleRate),
@@ -48,7 +48,12 @@ public class AudioFormatConverter {
     }
   }
 
-  /// Get the target format as AudioStreamBasicDescription
+  /// The source format this converter reads from.
+  public var sourceFormatDescription: AudioStreamBasicDescription {
+    return sourceFormat.streamDescription.pointee
+  }
+
+  /// The target format this converter produces.
   public var targetFormatDescription: AudioStreamBasicDescription {
     return targetFormat.streamDescription.pointee
   }
@@ -67,7 +72,7 @@ public class AudioFormatConverter {
       let inputBuffer = AVAudioPCMBuffer(
         pcmFormat: sourceFormat, frameCapacity: AVAudioFrameCount(inputFrameCount))
     else {
-      Logger.error("Failed to create input buffer")
+      AudioTeeLogging.logger.error("Failed to create input buffer")
       return packet
     }
 
@@ -83,7 +88,7 @@ public class AudioFormatConverter {
       let outputBuffer = AVAudioPCMBuffer(
         pcmFormat: targetFormat, frameCapacity: AVAudioFrameCount(outputFrameCount))
     else {
-      Logger.error("Failed to create output buffer")
+      AudioTeeLogging.logger.error("Failed to create output buffer")
       return packet
     }
 
@@ -99,7 +104,7 @@ public class AudioFormatConverter {
 
     // Check if conversion produced output (regardless of status code)
     guard outputBuffer.frameLength > 0 else {
-      Logger.error(
+      AudioTeeLogging.logger.error(
         "Audio conversion produced no output",
         context: [
           "status": String(describing: status),

@@ -1,7 +1,10 @@
 import Foundation
 
-public class Logger {
-  nonisolated(unsafe) private static let dateFormatter: ISO8601DateFormatter = {
+/// Default logger implementation that writes JSON messages to stderr.
+/// This is the CLI-appropriate logger; library consumers can replace it
+/// via AudioTeeLogging.logger.
+public class StderrJSONLogger: AudioTeeLogger {
+  private let dateFormatter: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [
       .withInternetDateTime,
@@ -10,17 +13,22 @@ public class Logger {
     return formatter
   }()
 
-  private static let jsonEncoder: JSONEncoder = {
+  private let jsonEncoder: JSONEncoder = {
     let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .custom { date, encoder in
-      var container = encoder.singleValueContainer()
-      try container.encode(dateFormatter.string(from: date))
-    }
     return encoder
   }()
 
-  // Write any message with the unified envelope
-  public static func writeMessage<T: Codable>(_ type: MessageType, data: T? = nil) {
+  public init() {
+    // Configured in init because stored property initializers can't
+    // reference other instance properties (self.dateFormatter).
+    jsonEncoder.dateEncodingStrategy = .custom { [dateFormatter] date, encoder in
+      var container = encoder.singleValueContainer()
+      try container.encode(dateFormatter.string(from: date))
+    }
+  }
+
+  // Write any message with the unified envelope to stderr
+  public func writeMessage<T: Codable>(_ type: MessageType, data: T?) {
     let message = Message(type: type, data: data)
     do {
       let jsonData = try jsonEncoder.encode(message)
@@ -32,17 +40,17 @@ public class Logger {
   }
 
   // Convenience methods for different message types
-  public static func info(_ message: String, context: [String: String]? = nil) {
+  public func info(_ message: String, context: [String: String]? = nil) {
     let logData = LogData(message: message, context: context)
     writeMessage(.info, data: logData)
   }
 
-  public static func error(_ message: String, context: [String: String]? = nil) {
+  public func error(_ message: String, context: [String: String]? = nil) {
     let logData = LogData(message: message, context: context)
     writeMessage(.error, data: logData)
   }
 
-  public static func debug(_ message: String, context: [String: String]? = nil) {
+  public func debug(_ message: String, context: [String: String]? = nil) {
     let logData = LogData(message: message, context: context)
     writeMessage(.debug, data: logData)
   }
