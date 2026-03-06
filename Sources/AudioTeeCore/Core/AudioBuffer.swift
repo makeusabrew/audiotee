@@ -1,8 +1,15 @@
 import CoreAudio
 import Foundation
 
+/// Ring buffer for accumulating raw audio data and extracting fixed-size chunks.
+///
+/// Uses a raw heap-allocated pointer rather than Swift Array to avoid
+/// copy-on-write reference-count checks on every mutation. This buffer
+/// lives on the real-time audio IO thread and is never shared, so COW
+/// semantics are pure overhead.
 public class AudioBuffer {
-  private var buffer: [UInt8]
+  /// Raw heap-allocated ring buffer backing store.
+  private let buffer: UnsafeMutableRawPointer
   private var writeIndex: Int = 0
   private var readIndex: Int = 0
   private var availableBytes: Int = 0
@@ -12,56 +19,80 @@ public class AudioBuffer {
   private let chunkDuration: Double
 
   public init(format: AudioStreamBasicDescription, chunkDuration: Double = 0.2) {
-
     // Pre-calculate chunk parameters
     let bytesPerFrame = Int(format.mBytesPerFrame)
     let samplesPerChunk = Int(format.mSampleRate * chunkDuration)
     self.bytesPerChunk = samplesPerChunk * bytesPerFrame
     self.chunkDuration = Double(samplesPerChunk) / format.mSampleRate
 
-    // Calculate max buffer size to hold ~10 seconds of audio, way more than the maximum we allow
+    // Calculate max buffer size to hold ~10 seconds of audio (safety limit)
     let bytesPerSecond = Int(format.mSampleRate) * bytesPerFrame
     self.maxBufferSize = bytesPerSecond * 10
 
-    // Pre-allocated ring buffer
-    self.buffer = Array(repeating: 0, count: maxBufferSize)
+    // Allocate raw memory. We use UnsafeMutableRawPointer instead of [UInt8]
+    // to eliminate Swift Array's COW ref-count check on every write/read.
+    self.buffer = UnsafeMutableRawPointer.allocate(
+      byteCount: maxBufferSize,
+      alignment: MemoryLayout<UInt8>.alignment
+    )
+    buffer.initializeMemory(as: UInt8.self, repeating: 0, count: maxBufferSize)
   }
 
-  public func append(_ data: Data) {
-    guard availableBytes + data.count <= maxBufferSize else {
+  deinit {
+    buffer.deallocate()
+  }
+
+  /// Appends audio data directly from a raw pointer into the ring buffer.
+  /// This is the fast path used by the IO proc callback: one memcpy from
+  /// the Core Audio buffer into our ring buffer, with no intermediate
+  /// Data allocation.
+  public func append(from source: UnsafeRawPointer, count: Int) {
+    guard count >= 0 else {
+      AudioTeeLogging.logger.error(
+        "Audio buffer append called with negative count",
+        context: ["count": String(count)])
+      return
+    }
+
+    guard availableBytes + count <= maxBufferSize else {
       AudioTeeLogging.logger.error(
         "Audio buffer overflow",
         context: [
-          "requested": String(data.count),
+          "requested": String(count),
           "available": String(maxBufferSize - availableBytes),
         ])
       return
     }
 
-    data.withUnsafeBytes { bytes in
-      let sourceBytes = bytes.bindMemory(to: UInt8.self)
-      let dataSize = sourceBytes.count
+    if writeIndex + count <= maxBufferSize {
+      // Single contiguous write — no wrap-around needed
+      buffer.advanced(by: writeIndex).copyMemory(from: source, byteCount: count)
+      writeIndex = (writeIndex + count) % maxBufferSize
+    } else {
+      // Two writes needed due to wrap-around at the end of the ring buffer
+      let firstChunkSize = maxBufferSize - writeIndex
+      let secondChunkSize = count - firstChunkSize
 
-      // Check if we can copy in one block (no wrap-around)
-      if writeIndex + dataSize <= maxBufferSize {
-        // only one write needed
-        buffer.replaceSubrange(writeIndex..<writeIndex + dataSize, with: sourceBytes)
-        writeIndex = (writeIndex + dataSize) % maxBufferSize
-      } else {
-        // two writes needed due to wrap-around
-        let firstChunkSize = maxBufferSize - writeIndex
-        let secondChunkSize = dataSize - firstChunkSize
+      buffer.advanced(by: writeIndex).copyMemory(from: source, byteCount: firstChunkSize)
+      buffer.copyMemory(from: source.advanced(by: firstChunkSize), byteCount: secondChunkSize)
 
-        buffer.replaceSubrange(writeIndex..<maxBufferSize, with: sourceBytes.prefix(firstChunkSize))
-        buffer.replaceSubrange(0..<secondChunkSize, with: sourceBytes.suffix(secondChunkSize))
-
-        writeIndex = secondChunkSize
-      }
+      writeIndex = secondChunkSize
     }
 
-    availableBytes += data.count
+    availableBytes += count
   }
 
+  /// Appends audio data from a Data value. Delegates to the raw pointer
+  /// path; prefer append(from:count:) when you already have a pointer to
+  /// avoid creating a Data object.
+  public func append(_ data: Data) {
+    data.withUnsafeBytes { bytes in
+      guard let baseAddress = bytes.baseAddress else { return }
+      append(from: baseAddress, count: bytes.count)
+    }
+  }
+
+  /// Extracts all complete chunks currently available in the buffer.
   public func processChunks() -> [AudioPacket] {
     var packets: [AudioPacket] = []
 
@@ -76,20 +107,26 @@ public class AudioBuffer {
     // Check if we have enough data for a complete chunk
     guard availableBytes >= bytesPerChunk else { return nil }
 
-    var chunkData = Data(capacity: bytesPerChunk)
+    let chunkData: Data
 
     // Check if we can copy in one block (no wrap-around)
     if readIndex + bytesPerChunk <= maxBufferSize {
       // one copy needed
-      chunkData.append(contentsOf: buffer[readIndex..<readIndex + bytesPerChunk])
+      chunkData = Data(bytes: buffer.advanced(by: readIndex), count: bytesPerChunk)
       readIndex = (readIndex + bytesPerChunk) % maxBufferSize
     } else {
       // two copies needed due to wrap-around
       let firstChunkSize = maxBufferSize - readIndex
       let secondChunkSize = bytesPerChunk - firstChunkSize
 
-      chunkData.append(contentsOf: buffer[readIndex..<maxBufferSize])
-      chunkData.append(contentsOf: buffer[0..<secondChunkSize])
+      var assembled = Data(capacity: bytesPerChunk)
+      assembled.append(
+        buffer.advanced(by: readIndex).assumingMemoryBound(to: UInt8.self),
+        count: firstChunkSize)
+      assembled.append(
+        buffer.assumingMemoryBound(to: UInt8.self),
+        count: secondChunkSize)
+      chunkData = assembled
 
       readIndex = secondChunkSize
     }

@@ -36,7 +36,8 @@ public class AudioRecorder {
     if let targetSampleRate = convertToSampleRate {
       // Validate sample rate
       guard AudioFormatConverter.isValidSampleRate(targetSampleRate) else {
-        AudioTeeLogging.logger.error("Invalid sample rate", context: ["sample_rate": String(targetSampleRate)])
+        AudioTeeLogging.logger.error(
+          "Invalid sample rate", context: ["sample_rate": String(targetSampleRate)])
         self.converter = nil
         self.finalFormat = sourceFormat
         return
@@ -108,14 +109,16 @@ public class AudioRecorder {
     let bufferList = inputData.pointee
     let firstBuffer = bufferList.mBuffers
 
-    guard firstBuffer.mData != nil && firstBuffer.mDataByteSize > 0 else {
+    guard let sourcePointer = firstBuffer.mData, firstBuffer.mDataByteSize > 0 else {
       AudioTeeLogging.logger.error("Received empty audio buffer")
       return noErr
     }
 
-    // Append raw audio data to buffer
-    let audioData = Data(bytes: firstBuffer.mData!, count: Int(firstBuffer.mDataByteSize))
-    audioBuffer?.append(audioData)
+    // Copy directly from the Core Audio buffer into our ring buffer.
+    // This avoids creating an intermediate Data object (heap alloc + memcpy)
+    // on every IO callback (~10ms). The pointer is valid for the duration
+    // of this callback, so this is safe.
+    audioBuffer?.append(from: sourcePointer, count: Int(firstBuffer.mDataByteSize))
 
     processAudioBuffer()
 

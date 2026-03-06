@@ -45,7 +45,8 @@ struct AudioTee {
       name: "exclude-processes", help: "Process IDs to exclude (space-separated)")
     parser.addFlag(name: "mute", help: "Mute processes being tapped")
     parser.addFlag(name: "stereo", help: "Records in stereo")
-    parser.addFlag(name: "flush", help: "Flush stdout after each audio chunk (reduces latency when piping)")
+    parser.addFlag(
+      name: "flush", help: "Flush stdout after each audio chunk (reduces latency when piping)")
     parser.addOption(
       name: "sample-rate",
       help: "Target sample rate (8000, 16000, 22050, 24000, 32000, 44100, 48000)")

@@ -8,7 +8,7 @@ public class AudioTapManager {
   private var deviceID: AudioObjectID?
 
   public init() {}
-  
+
   deinit {
     AudioTeeLogging.logger.debug("Cleaning up audio tap manager")
 
@@ -76,7 +76,8 @@ public class AudioTapManager {
     AudioTeeLogging.logger.debug(
       "AudioHardwareCreateProcessTap completed", context: ["status": String(status)])
     guard status == kAudioHardwareNoError else {
-      AudioTeeLogging.logger.error("Failed to create audio tap", context: ["status": String(status)])
+      AudioTeeLogging.logger.error(
+        "Failed to create audio tap", context: ["status": String(status)])
       throw AudioTeeError.tapCreationFailed(status)
     }
 
@@ -115,7 +116,8 @@ public class AudioTapManager {
     let status = AudioHardwareCreateAggregateDevice(description as CFDictionary, &deviceID)
 
     guard status == kAudioHardwareNoError else {
-      AudioTeeLogging.logger.error("Failed to create aggregate device", context: ["status": String(status)])
+      AudioTeeLogging.logger.error(
+        "Failed to create aggregate device", context: ["status": String(status)])
       throw AudioTeeError.aggregateDeviceCreationFailed(status)
     }
 

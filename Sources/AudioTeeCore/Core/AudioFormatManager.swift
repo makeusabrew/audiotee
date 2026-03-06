@@ -3,7 +3,8 @@ import CoreAudio
 import Foundation
 
 public class AudioFormatManager {
-  public static func getDeviceFormat(deviceID: AudioObjectID) throws -> AudioStreamBasicDescription {
+  public static func getDeviceFormat(deviceID: AudioObjectID) throws -> AudioStreamBasicDescription
+  {
     // First, wait for the device to become alive/ready
     let deviceReadyTimeout = 2.0  // 2 seconds max wait
     let pollInterval = 0.1  // 100ms poll interval
@@ -49,7 +50,8 @@ public class AudioFormatManager {
         deviceID, &propertyAddress, 0, nil, &propertySize, &streamFormat)
 
       if status == noErr {
-        AudioTeeLogging.logger.debug("Successfully retrieved device format", context: ["attempt": String(attempt)])
+        AudioTeeLogging.logger.debug(
+          "Successfully retrieved device format", context: ["attempt": String(attempt)])
         return streamFormat
       }
 
