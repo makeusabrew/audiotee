@@ -82,16 +82,6 @@ public class AudioBuffer {
     availableBytes += count
   }
 
-  /// Appends audio data from a Data value. Delegates to the raw pointer
-  /// path; prefer append(from:count:) when you already have a pointer to
-  /// avoid creating a Data object.
-  public func append(_ data: Data) {
-    data.withUnsafeBytes { bytes in
-      guard let baseAddress = bytes.baseAddress else { return }
-      append(from: baseAddress, count: bytes.count)
-    }
-  }
-
   /// Extracts all complete chunks currently available in the buffer.
   public func processChunks() -> [AudioPacket] {
     var packets: [AudioPacket] = []

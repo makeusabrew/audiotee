@@ -3,6 +3,10 @@ import XCTest
 
 @testable import AudioTeeCore
 
+// CoreAudio defines its own AudioBuffer struct, which collides with ours.
+// Explicit module qualification avoids ambiguity in tests that import both.
+private typealias AudioBuffer = AudioTeeCore.AudioBuffer
+
 final class AudioBufferTests: XCTestCase {
 
   // MARK: - Helpers
@@ -32,6 +36,14 @@ final class AudioBufferTests: XCTestCase {
     return Data(repeating: byte, count: count)
   }
 
+  /// Appends Data to an AudioBuffer via the raw pointer path,
+  /// matching how processAudio() calls append(from:count:).
+  private func appendData(_ data: Data, to buffer: AudioBuffer) {
+    data.withUnsafeBytes { bytes in
+      buffer.append(from: bytes.baseAddress!, count: bytes.count)
+    }
+  }
+
   // MARK: - Basic append + processChunks
 
   func testSingleChunkExtraction() {
@@ -40,9 +52,8 @@ final class AudioBufferTests: XCTestCase {
     let buffer = AudioBuffer(format: format, chunkDuration: 0.1)
     let chunkSize = 3200  // 16000 * 0.1 * 2
 
-    // Append exactly one chunk worth of data via Data path
     let data = makeData(byte: 0xAB, count: chunkSize)
-    buffer.append(data)
+    appendData(data, to: buffer)
 
     let packets = buffer.processChunks()
     XCTAssertEqual(packets.count, 1)
@@ -56,7 +67,7 @@ final class AudioBufferTests: XCTestCase {
     let chunkSize = 3200
 
     // Append 2.5 chunks worth
-    buffer.append(makeData(byte: 0x01, count: chunkSize * 2 + chunkSize / 2))
+    appendData(makeData(byte: 0x01, count: chunkSize * 2 + chunkSize / 2), to: buffer)
 
     let packets = buffer.processChunks()
     // Should get 2 complete chunks, remainder stays in buffer
@@ -71,28 +82,10 @@ final class AudioBufferTests: XCTestCase {
     let chunkSize = 3200
 
     // Append less than one chunk
-    buffer.append(makeData(byte: 0xFF, count: chunkSize - 1))
+    appendData(makeData(byte: 0xFF, count: chunkSize - 1), to: buffer)
 
     let packets = buffer.processChunks()
     XCTAssertEqual(packets.count, 0)
-  }
-
-  // MARK: - Zero-copy append(from:count:)
-
-  func testZeroCopyAppend() {
-    let format = makeFormat()
-    let buffer = AudioBuffer(format: format, chunkDuration: 0.1)
-    let chunkSize = 3200
-
-    // Simulate what processAudio does: pass a raw pointer directly
-    let source = makeData(byte: 0xCD, count: chunkSize)
-    source.withUnsafeBytes { bytes in
-      buffer.append(from: bytes.baseAddress!, count: bytes.count)
-    }
-
-    let packets = buffer.processChunks()
-    XCTAssertEqual(packets.count, 1)
-    XCTAssertEqual(packets[0].data, source)
   }
 
   // MARK: - Wrap-around
@@ -104,12 +97,11 @@ final class AudioBufferTests: XCTestCase {
     let format = makeFormat(sampleRate: 8000)
     let buffer = AudioBuffer(format: format, chunkDuration: 0.3)
     let chunkSize = 4800  // 8000 * 0.3 * 2
-    let maxBuffer = 160000  // 8000 * 2 * 10
 
     // Write 33 chunks (158400 bytes), drain them all.
     // writeIndex = 158400, readIndex = 158400. 1600 bytes remain before boundary.
     for _ in 0..<33 {
-      buffer.append(makeData(byte: 0x00, count: chunkSize))
+      appendData(makeData(byte: 0x00, count: chunkSize), to: buffer)
     }
     let drained = buffer.processChunks()
     XCTAssertEqual(drained.count, 33)
@@ -123,7 +115,7 @@ final class AudioBufferTests: XCTestCase {
     wrappingData.append(makeData(byte: 0xAA, count: 1600))  // fills to boundary
     wrappingData.append(makeData(byte: 0xBB, count: 3200))  // wraps to start
     XCTAssertEqual(wrappingData.count, chunkSize)
-    buffer.append(wrappingData)
+    appendData(wrappingData, to: buffer)
 
     let packets = buffer.processChunks()
     XCTAssertEqual(packets.count, 1)
@@ -139,7 +131,7 @@ final class AudioBufferTests: XCTestCase {
 
     // Write and drain 33 chunks. Both indices land at 158400.
     for _ in 0..<33 {
-      buffer.append(makeData(byte: 0x00, count: chunkSize))
+      appendData(makeData(byte: 0x00, count: chunkSize), to: buffer)
     }
     _ = buffer.processChunks()
 
@@ -151,41 +143,11 @@ final class AudioBufferTests: XCTestCase {
     var crossBoundaryData = Data()
     crossBoundaryData.append(makeData(byte: 0xCC, count: 1600))
     crossBoundaryData.append(makeData(byte: 0xDD, count: 3200))
-    buffer.append(crossBoundaryData)
+    appendData(crossBoundaryData, to: buffer)
 
     let packets = buffer.processChunks()
     XCTAssertEqual(packets.count, 1)
     XCTAssertEqual(packets[0].data, crossBoundaryData)
-  }
-
-  func testZeroCopyAppendWrapAround() {
-    // Verify that the raw-pointer append path also wraps correctly,
-    // since it has its own copy logic separate from the Data-based path.
-    let format = makeFormat(sampleRate: 8000)
-    let buffer = AudioBuffer(format: format, chunkDuration: 0.3)
-    let chunkSize = 4800
-
-    // Position writeIndex at 158400 via write + drain
-    for _ in 0..<33 {
-      let data = makeData(byte: 0x00, count: chunkSize)
-      data.withUnsafeBytes { bytes in
-        buffer.append(from: bytes.baseAddress!, count: bytes.count)
-      }
-    }
-    _ = buffer.processChunks()
-
-    // Write a wrapping chunk via the raw-pointer path
-    var wrappingData = Data()
-    wrappingData.append(makeData(byte: 0xEE, count: 1600))
-    wrappingData.append(makeData(byte: 0xFF, count: 3200))
-
-    wrappingData.withUnsafeBytes { bytes in
-      buffer.append(from: bytes.baseAddress!, count: bytes.count)
-    }
-
-    let packets = buffer.processChunks()
-    XCTAssertEqual(packets.count, 1)
-    XCTAssertEqual(packets[0].data, wrappingData)
   }
 
   // MARK: - Overflow guard
@@ -196,10 +158,10 @@ final class AudioBufferTests: XCTestCase {
     let maxBuffer = 160000
 
     // Fill the buffer completely
-    buffer.append(makeData(byte: 0x01, count: maxBuffer))
+    appendData(makeData(byte: 0x01, count: maxBuffer), to: buffer)
 
     // Try to append more — should be silently rejected (overflow guard)
-    buffer.append(makeData(byte: 0x02, count: 100))
+    appendData(makeData(byte: 0x02, count: 100), to: buffer)
 
     // Drain and verify we only got the original data
     let packets = buffer.processChunks()
@@ -222,7 +184,7 @@ final class AudioBufferTests: XCTestCase {
     // Simulate many small IO callbacks building up to one chunk
     let callbackSize = 320  // 10 callbacks to fill one chunk
     for i in 0..<10 {
-      buffer.append(makeData(byte: UInt8(i), count: callbackSize))
+      appendData(makeData(byte: UInt8(i), count: callbackSize), to: buffer)
     }
 
     let packets = buffer.processChunks()
@@ -242,7 +204,7 @@ final class AudioBufferTests: XCTestCase {
     let format = makeFormat()
     let buffer = AudioBuffer(format: format, chunkDuration: 0.1)
 
-    buffer.append(makeData(byte: 0x00, count: 3200))
+    appendData(makeData(byte: 0x00, count: 3200), to: buffer)
     let packets = buffer.processChunks()
 
     XCTAssertEqual(packets[0].duration, 0.1, accuracy: 0.001)
