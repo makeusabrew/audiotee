@@ -10,20 +10,21 @@ import Foundation
 public class AudioBuffer {
   /// Raw heap-allocated ring buffer backing store.
   private let buffer: UnsafeMutableRawPointer
+  /// Pre-allocated buffer for linearizing chunks that straddle the ring
+  /// buffer boundary. Avoids a heap allocation on the wrap-around path.
+  private let linearizationBuffer: UnsafeMutableRawPointer
   private var writeIndex: Int = 0
   private var readIndex: Int = 0
   private var availableBytes: Int = 0
   private let maxBufferSize: Int
 
-  private let bytesPerChunk: Int
-  private let chunkDuration: Double
+  public let bytesPerChunk: Int
 
   public init(format: AudioStreamBasicDescription, chunkDuration: Double = 0.2) {
     // Pre-calculate chunk parameters
     let bytesPerFrame = Int(format.mBytesPerFrame)
     let samplesPerChunk = Int(format.mSampleRate * chunkDuration)
     self.bytesPerChunk = samplesPerChunk * bytesPerFrame
-    self.chunkDuration = Double(samplesPerChunk) / format.mSampleRate
 
     // Calculate max buffer size to hold ~10 seconds of audio (safety limit)
     let bytesPerSecond = Int(format.mSampleRate) * bytesPerFrame
@@ -36,10 +37,16 @@ public class AudioBuffer {
       alignment: MemoryLayout<UInt8>.alignment
     )
     buffer.initializeMemory(as: UInt8.self, repeating: 0, count: maxBufferSize)
+
+    self.linearizationBuffer = UnsafeMutableRawPointer.allocate(
+      byteCount: bytesPerChunk,
+      alignment: MemoryLayout<UInt8>.alignment
+    )
   }
 
   deinit {
     buffer.deallocate()
+    linearizationBuffer.deallocate()
   }
 
   /// Appends audio data directly from a raw pointer into the ring buffer.
@@ -82,51 +89,33 @@ public class AudioBuffer {
     availableBytes += count
   }
 
-  /// Extracts all complete chunks currently available in the buffer.
-  public func processChunks() -> [AudioPacket] {
-    var packets: [AudioPacket] = []
+  /// Calls `handler` once for each complete chunk available in the buffer.
+  /// The pointer passed to the handler is valid only for the duration of
+  /// that call. In the common (contiguous) case this points directly into
+  /// the ring buffer — zero copies. In the wrap-around case the chunk is
+  /// linearized into a pre-allocated scratch buffer — one memcpy, zero
+  /// heap allocations.
+  public func processChunks(_ handler: (UnsafeRawPointer, Int) -> Void) {
+    while availableBytes >= bytesPerChunk {
+      if readIndex + bytesPerChunk <= maxBufferSize {
+        // Contiguous: point directly into the ring buffer
+        handler(buffer.advanced(by: readIndex), bytesPerChunk)
+        readIndex = (readIndex + bytesPerChunk) % maxBufferSize
+      } else {
+        // Wrap-around: linearize into the pre-allocated scratch buffer
+        let firstChunkSize = maxBufferSize - readIndex
+        let secondChunkSize = bytesPerChunk - firstChunkSize
 
-    while let packet = nextChunk() {
-      packets.append(packet)
+        linearizationBuffer.copyMemory(
+          from: buffer.advanced(by: readIndex), byteCount: firstChunkSize)
+        linearizationBuffer.advanced(by: firstChunkSize).copyMemory(
+          from: buffer, byteCount: secondChunkSize)
+
+        handler(linearizationBuffer, bytesPerChunk)
+        readIndex = secondChunkSize
+      }
+
+      availableBytes -= bytesPerChunk
     }
-
-    return packets
-  }
-
-  private func nextChunk() -> AudioPacket? {
-    // Check if we have enough data for a complete chunk
-    guard availableBytes >= bytesPerChunk else { return nil }
-
-    let chunkData: Data
-
-    // Check if we can copy in one block (no wrap-around)
-    if readIndex + bytesPerChunk <= maxBufferSize {
-      // one copy needed
-      chunkData = Data(bytes: buffer.advanced(by: readIndex), count: bytesPerChunk)
-      readIndex = (readIndex + bytesPerChunk) % maxBufferSize
-    } else {
-      // two copies needed due to wrap-around
-      let firstChunkSize = maxBufferSize - readIndex
-      let secondChunkSize = bytesPerChunk - firstChunkSize
-
-      var assembled = Data(capacity: bytesPerChunk)
-      assembled.append(
-        buffer.advanced(by: readIndex).assumingMemoryBound(to: UInt8.self),
-        count: firstChunkSize)
-      assembled.append(
-        buffer.assumingMemoryBound(to: UInt8.self),
-        count: secondChunkSize)
-      chunkData = assembled
-
-      readIndex = secondChunkSize
-    }
-
-    availableBytes -= bytesPerChunk
-
-    return AudioPacket(
-      timestamp: Date(),
-      duration: chunkDuration,
-      data: chunkData
-    )
   }
 }

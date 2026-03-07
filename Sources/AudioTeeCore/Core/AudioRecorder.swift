@@ -132,10 +132,17 @@ public class AudioRecorder {
   }
 
   private func processAudioBuffer() {
-    // Process and send complete chunks, applying conversion if needed
-    audioBuffer?.processChunks().forEach { packet in
-      let processedPacket = converter?.transform(packet) ?? packet
-      outputHandler.handleAudioPacket(processedPacket)
+    audioBuffer?.processChunks { pointer, count in
+      if let converter = self.converter {
+        if !converter.transform(from: pointer, count: count, handler: { outPtr, outCount in
+          self.outputHandler.handleAudioData(outPtr, count: outCount)
+        }) {
+          // Conversion failed — pass through unconverted audio
+          self.outputHandler.handleAudioData(pointer, count: count)
+        }
+      } else {
+        self.outputHandler.handleAudioData(pointer, count: count)
+      }
     }
   }
 

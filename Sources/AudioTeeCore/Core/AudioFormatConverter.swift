@@ -126,27 +126,28 @@ public class AudioFormatConverter {
     return (inputBuf, outputBuf)
   }
 
-  public func transform(_ packet: AudioPacket) -> AudioPacket {
-    let inputData = packet.data
-
-    // Calculate frame count from the input data size
+  /// Converts audio data in-place through the pre-allocated converter buffers.
+  /// Calls `handler` with a pointer to the converted output, valid only for
+  /// the duration of that call. Returns false on failure (caller should
+  /// pass through the original data or drop it).
+  @discardableResult
+  public func transform(
+    from source: UnsafeRawPointer, count: Int,
+    handler: (UnsafeRawPointer, Int) -> Void
+  ) -> Bool {
     let bytesPerFrame = Int(sourceFormat.streamDescription.pointee.mBytesPerFrame)
-    let inputFrameCount = AVAudioFrameCount(inputData.count / bytesPerFrame)
+    let inputFrameCount = AVAudioFrameCount(count / bytesPerFrame)
 
-    // Get or create pre-allocated buffers
     guard let (inputBuffer, outputBuffer) = getBuffers(inputFrameCount: inputFrameCount) else {
-      return packet
+      return false
     }
 
-    // Copy input data into the reusable input buffer
-    inputData.withUnsafeBytes { bytes in
-      let dest = inputBuffer.audioBufferList.pointee.mBuffers.mData!
-      dest.copyMemory(from: bytes.baseAddress!, byteCount: inputData.count)
-    }
+    // Copy source data into the reusable input buffer
+    let dest = inputBuffer.audioBufferList.pointee.mBuffers.mData!
+    dest.copyMemory(from: source, byteCount: count)
     inputBuffer.frameLength = inputFrameCount
 
-    // Perform conversion — the block-based API lets AVAudioConverter pull
-    // input data as needed. We do NOT call avConverter.reset() between
+    // Perform conversion — we do NOT call avConverter.reset() between
     // calls because the resampler maintains internal state for continuity
     // across chunks (avoiding discontinuity artifacts).
     var error: NSError?
@@ -157,7 +158,6 @@ public class AudioFormatConverter {
       return inputBuffer
     }
 
-    // Check if conversion produced output (regardless of status code)
     guard outputBuffer.frameLength > 0 else {
       AudioTeeLogging.logger.error(
         "Audio conversion produced no output",
@@ -167,19 +167,13 @@ public class AudioFormatConverter {
           "input_frames": String(inputBuffer.frameLength),
           "output_capacity": String(outputBuffer.frameCapacity),
         ])
-      return packet
+      return false
     }
 
-    // Extract converted data from the reusable output buffer
-    let outputData = Data(
-      bytes: outputBuffer.audioBufferList.pointee.mBuffers.mData!,
-      count: Int(outputBuffer.frameLength * targetFormat.streamDescription.pointee.mBytesPerFrame))
-
-    return AudioPacket(
-      timestamp: packet.timestamp,
-      duration: packet.duration,
-      data: outputData
-    )
+    let outputCount = Int(
+      outputBuffer.frameLength * targetFormat.streamDescription.pointee.mBytesPerFrame)
+    handler(outputBuffer.audioBufferList.pointee.mBuffers.mData!, outputCount)
+    return true
   }
 
   public static func toSampleRate(
