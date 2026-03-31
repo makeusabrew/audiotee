@@ -1,105 +1,121 @@
 import CoreAudio
 import Foundation
 
+/// Ring buffer for accumulating raw audio data and extracting fixed-size chunks.
+///
+/// Uses a raw heap-allocated pointer rather than Swift Array to avoid
+/// copy-on-write reference-count checks on every mutation. This buffer
+/// lives on the real-time audio IO thread and is never shared, so COW
+/// semantics are pure overhead.
 public class AudioBuffer {
-  private var buffer: [UInt8]
+  /// Raw heap-allocated ring buffer backing store.
+  private let buffer: UnsafeMutableRawPointer
+  /// Pre-allocated buffer for linearizing chunks that straddle the ring
+  /// buffer boundary. Avoids a heap allocation on the wrap-around path.
+  private let linearizationBuffer: UnsafeMutableRawPointer
   private var writeIndex: Int = 0
   private var readIndex: Int = 0
   private var availableBytes: Int = 0
   private let maxBufferSize: Int
 
-  private let bytesPerChunk: Int
-  private let chunkDuration: Double
+  public let bytesPerChunk: Int
 
   public init(format: AudioStreamBasicDescription, chunkDuration: Double = 0.2) {
-
     // Pre-calculate chunk parameters
     let bytesPerFrame = Int(format.mBytesPerFrame)
     let samplesPerChunk = Int(format.mSampleRate * chunkDuration)
     self.bytesPerChunk = samplesPerChunk * bytesPerFrame
-    self.chunkDuration = Double(samplesPerChunk) / format.mSampleRate
 
-    // Calculate max buffer size to hold ~10 seconds of audio, way more than the maximum we allow
+    // Calculate max buffer size to hold ~10 seconds of audio (safety limit)
     let bytesPerSecond = Int(format.mSampleRate) * bytesPerFrame
     self.maxBufferSize = bytesPerSecond * 10
 
-    // Pre-allocated ring buffer
-    self.buffer = Array(repeating: 0, count: maxBufferSize)
+    // Allocate raw memory. We use UnsafeMutableRawPointer instead of [UInt8]
+    // to eliminate Swift Array's COW ref-count check on every write/read.
+    self.buffer = UnsafeMutableRawPointer.allocate(
+      byteCount: maxBufferSize,
+      alignment: MemoryLayout<UInt8>.alignment
+    )
+    buffer.initializeMemory(as: UInt8.self, repeating: 0, count: maxBufferSize)
+
+    self.linearizationBuffer = UnsafeMutableRawPointer.allocate(
+      byteCount: bytesPerChunk,
+      alignment: MemoryLayout<UInt8>.alignment
+    )
   }
 
-  public func append(_ data: Data) {
-    guard availableBytes + data.count <= maxBufferSize else {
+  deinit {
+    buffer.deallocate()
+    linearizationBuffer.deallocate()
+  }
+
+  /// Appends audio data directly from a raw pointer into the ring buffer.
+  /// This is the fast path used by the IO proc callback: one memcpy from
+  /// the Core Audio buffer into our ring buffer, with no intermediate
+  /// Data allocation.
+  public func append(from source: UnsafeRawPointer, count: Int) {
+    guard count >= 0 else {
+      AudioTeeLogging.logger.error(
+        "Audio buffer append called with negative count",
+        context: ["count": String(count)])
+      return
+    }
+
+    guard availableBytes + count <= maxBufferSize else {
       AudioTeeLogging.logger.error(
         "Audio buffer overflow",
         context: [
-          "requested": String(data.count),
+          "requested": String(count),
           "available": String(maxBufferSize - availableBytes),
         ])
       return
     }
 
-    data.withUnsafeBytes { bytes in
-      let sourceBytes = bytes.bindMemory(to: UInt8.self)
-      let dataSize = sourceBytes.count
-
-      // Check if we can copy in one block (no wrap-around)
-      if writeIndex + dataSize <= maxBufferSize {
-        // only one write needed
-        buffer.replaceSubrange(writeIndex..<writeIndex + dataSize, with: sourceBytes)
-        writeIndex = (writeIndex + dataSize) % maxBufferSize
-      } else {
-        // two writes needed due to wrap-around
-        let firstChunkSize = maxBufferSize - writeIndex
-        let secondChunkSize = dataSize - firstChunkSize
-
-        buffer.replaceSubrange(writeIndex..<maxBufferSize, with: sourceBytes.prefix(firstChunkSize))
-        buffer.replaceSubrange(0..<secondChunkSize, with: sourceBytes.suffix(secondChunkSize))
-
-        writeIndex = secondChunkSize
-      }
-    }
-
-    availableBytes += data.count
-  }
-
-  public func processChunks() -> [AudioPacket] {
-    var packets: [AudioPacket] = []
-
-    while let packet = nextChunk() {
-      packets.append(packet)
-    }
-
-    return packets
-  }
-
-  private func nextChunk() -> AudioPacket? {
-    // Check if we have enough data for a complete chunk
-    guard availableBytes >= bytesPerChunk else { return nil }
-
-    var chunkData = Data(capacity: bytesPerChunk)
-
-    // Check if we can copy in one block (no wrap-around)
-    if readIndex + bytesPerChunk <= maxBufferSize {
-      // one copy needed
-      chunkData.append(contentsOf: buffer[readIndex..<readIndex + bytesPerChunk])
-      readIndex = (readIndex + bytesPerChunk) % maxBufferSize
+    if writeIndex + count <= maxBufferSize {
+      // Single contiguous write — no wrap-around needed
+      buffer.advanced(by: writeIndex).copyMemory(from: source, byteCount: count)
+      writeIndex = (writeIndex + count) % maxBufferSize
     } else {
-      // two copies needed due to wrap-around
-      let firstChunkSize = maxBufferSize - readIndex
-      let secondChunkSize = bytesPerChunk - firstChunkSize
+      // Two writes needed due to wrap-around at the end of the ring buffer
+      let firstChunkSize = maxBufferSize - writeIndex
+      let secondChunkSize = count - firstChunkSize
 
-      chunkData.append(contentsOf: buffer[readIndex..<maxBufferSize])
-      chunkData.append(contentsOf: buffer[0..<secondChunkSize])
+      buffer.advanced(by: writeIndex).copyMemory(from: source, byteCount: firstChunkSize)
+      buffer.copyMemory(from: source.advanced(by: firstChunkSize), byteCount: secondChunkSize)
 
-      readIndex = secondChunkSize
+      writeIndex = secondChunkSize
     }
 
-    availableBytes -= bytesPerChunk
+    availableBytes += count
+  }
 
-    return AudioPacket(
-      timestamp: Date(),
-      duration: chunkDuration,
-      data: chunkData
-    )
+  /// Calls `handler` once for each complete chunk available in the buffer.
+  /// The pointer passed to the handler is valid only for the duration of
+  /// that call. In the common (contiguous) case this points directly into
+  /// the ring buffer — zero copies. In the wrap-around case the chunk is
+  /// linearized into a pre-allocated scratch buffer — one memcpy, zero
+  /// heap allocations.
+  public func processChunks(_ handler: (UnsafeRawPointer, Int) -> Void) {
+    while availableBytes >= bytesPerChunk {
+      if readIndex + bytesPerChunk <= maxBufferSize {
+        // Contiguous: point directly into the ring buffer
+        handler(buffer.advanced(by: readIndex), bytesPerChunk)
+        readIndex = (readIndex + bytesPerChunk) % maxBufferSize
+      } else {
+        // Wrap-around: linearize into the pre-allocated scratch buffer
+        let firstChunkSize = maxBufferSize - readIndex
+        let secondChunkSize = bytesPerChunk - firstChunkSize
+
+        linearizationBuffer.copyMemory(
+          from: buffer.advanced(by: readIndex), byteCount: firstChunkSize)
+        linearizationBuffer.advanced(by: firstChunkSize).copyMemory(
+          from: buffer, byteCount: secondChunkSize)
+
+        handler(linearizationBuffer, bytesPerChunk)
+        readIndex = secondChunkSize
+      }
+
+      availableBytes -= bytesPerChunk
+    }
   }
 }

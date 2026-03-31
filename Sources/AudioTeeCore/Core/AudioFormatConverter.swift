@@ -2,11 +2,21 @@ import AVFoundation
 import CoreAudio
 import Foundation
 
-/// Simple audio format converter using AVFoundation
+/// Audio format converter using AVFoundation's AVAudioConverter.
+///
+/// Pre-allocates input/output buffers on first use and reuses them across
+/// transform() calls. This eliminates two AVAudioPCMBuffer heap allocations
+/// per chunk — significant when chunks are small (50ms = 20 calls/sec).
 public class AudioFormatConverter {
   private let avConverter: AVAudioConverter
   private let sourceFormat: AVAudioFormat
   private let targetFormat: AVAudioFormat
+
+  /// Pre-allocated buffers reused across transform() calls. Lazily created
+  /// on first transform() since we need the actual input frame count to
+  /// size them correctly.
+  private var cachedInputBuffer: AVAudioPCMBuffer?
+  private var cachedOutputBuffer: AVAudioPCMBuffer?
 
   public init(sourceFormat: AudioStreamBasicDescription, targetFormat: AudioStreamBasicDescription)
     throws
@@ -58,51 +68,96 @@ public class AudioFormatConverter {
     return targetFormat.streamDescription.pointee
   }
 
-  public func transform(_ packet: AudioPacket) -> AudioPacket {
-    let inputData = packet.data
+  /// Returns pre-allocated input and output buffers sized for the given
+  /// input frame count. Allocates once on first call; reuses on subsequent
+  /// calls when capacity is sufficient. Re-allocates if a larger frame
+  /// count arrives (shouldn't happen with fixed chunk sizes, but handled
+  /// gracefully).
+  private func getBuffers(inputFrameCount: AVAudioFrameCount)
+    -> (input: AVAudioPCMBuffer, output: AVAudioPCMBuffer)?
+  {
+    // ceil() prevents float-to-int truncation from undersizing the buffer
+    // by one frame (e.g. 3199.9999 → 3199 instead of 3200).
+    let outputFrameCount = AVAudioFrameCount(
+      ceil(Double(inputFrameCount) * (targetFormat.sampleRate / sourceFormat.sampleRate))
+    )
 
-    // Calculate frame counts
-    let inputFrameCount =
-      inputData.count / Int(sourceFormat.streamDescription.pointee.mBytesPerFrame)
-    let outputFrameCount = Int(
-      Double(inputFrameCount) * (targetFormat.sampleRate / sourceFormat.sampleRate))
+    // Reuse cached buffers if they have sufficient capacity
+    if let inputBuf = cachedInputBuffer,
+      let outputBuf = cachedOutputBuffer,
+      inputBuf.frameCapacity >= inputFrameCount,
+      outputBuf.frameCapacity >= outputFrameCount
+    {
+      // Reset frame lengths for reuse — the underlying memory is retained,
+      // we just tell AVAudioPCMBuffer how many frames are valid this time.
+      inputBuf.frameLength = 0
+      outputBuf.frameLength = 0
+      return (inputBuf, outputBuf)
+    }
 
-    // Create input buffer
+    // Allocate new buffers (first call, or unexpected capacity increase)
     guard
-      let inputBuffer = AVAudioPCMBuffer(
-        pcmFormat: sourceFormat, frameCapacity: AVAudioFrameCount(inputFrameCount))
+      let inputBuf = AVAudioPCMBuffer(
+        pcmFormat: sourceFormat, frameCapacity: inputFrameCount)
     else {
       AudioTeeLogging.logger.error("Failed to create input buffer")
-      return packet
+      return nil
     }
 
-    // Copy input data to buffer
-    inputData.withUnsafeBytes { bytes in
-      let dest = inputBuffer.audioBufferList.pointee.mBuffers.mData!
-      dest.copyMemory(from: bytes.baseAddress!, byteCount: inputData.count)
-    }
-    inputBuffer.frameLength = AVAudioFrameCount(inputFrameCount)
-
-    // Create output buffer
     guard
-      let outputBuffer = AVAudioPCMBuffer(
-        pcmFormat: targetFormat, frameCapacity: AVAudioFrameCount(outputFrameCount))
+      let outputBuf = AVAudioPCMBuffer(
+        pcmFormat: targetFormat, frameCapacity: outputFrameCount)
     else {
       AudioTeeLogging.logger.error("Failed to create output buffer")
-      return packet
+      return nil
     }
 
-    // Perform conversion - simpler approach
+    // Cache for reuse on subsequent calls
+    cachedInputBuffer = inputBuf
+    cachedOutputBuffer = outputBuf
+
+    AudioTeeLogging.logger.debug(
+      "Allocated converter buffers",
+      context: [
+        "input_frame_capacity": String(inputFrameCount),
+        "output_frame_capacity": String(outputFrameCount),
+      ])
+
+    return (inputBuf, outputBuf)
+  }
+
+  /// Converts audio data in-place through the pre-allocated converter buffers.
+  /// Calls `handler` with a pointer to the converted output, valid only for
+  /// the duration of that call. Returns false on failure (caller should
+  /// pass through the original data or drop it).
+  @discardableResult
+  public func transform(
+    from source: UnsafeRawPointer, count: Int,
+    handler: (UnsafeRawPointer, Int) -> Void
+  ) -> Bool {
+    let bytesPerFrame = Int(sourceFormat.streamDescription.pointee.mBytesPerFrame)
+    let inputFrameCount = AVAudioFrameCount(count / bytesPerFrame)
+
+    guard let (inputBuffer, outputBuffer) = getBuffers(inputFrameCount: inputFrameCount) else {
+      return false
+    }
+
+    // Copy source data into the reusable input buffer
+    let dest = inputBuffer.audioBufferList.pointee.mBuffers.mData!
+    dest.copyMemory(from: source, byteCount: count)
+    inputBuffer.frameLength = inputFrameCount
+
+    // Perform conversion — we do NOT call avConverter.reset() between
+    // calls because the resampler maintains internal state for continuity
+    // across chunks (avoiding discontinuity artifacts).
     var error: NSError?
 
     let status = avConverter.convert(to: outputBuffer, error: &error) {
       requestedPackets, outStatus in
-      // Always provide our input buffer and let converter manage it
       outStatus.pointee = .haveData
       return inputBuffer
     }
 
-    // Check if conversion produced output (regardless of status code)
     guard outputBuffer.frameLength > 0 else {
       AudioTeeLogging.logger.error(
         "Audio conversion produced no output",
@@ -112,20 +167,13 @@ public class AudioFormatConverter {
           "input_frames": String(inputBuffer.frameLength),
           "output_capacity": String(outputBuffer.frameCapacity),
         ])
-      return packet
+      return false
     }
 
-    // Extract converted data
-    let outputData = Data(
-      bytes: outputBuffer.audioBufferList.pointee.mBuffers.mData!,
-      count: Int(outputBuffer.frameLength * targetFormat.streamDescription.pointee.mBytesPerFrame))
-
-    // Return new packet with converted audio (keeping original metadata for simplicity)
-    return AudioPacket(
-      timestamp: packet.timestamp,
-      duration: packet.duration,
-      data: outputData
-    )
+    let outputCount = Int(
+      outputBuffer.frameLength * targetFormat.streamDescription.pointee.mBytesPerFrame)
+    handler(outputBuffer.audioBufferList.pointee.mBuffers.mData!, outputCount)
+    return true
   }
 
   public static func toSampleRate(

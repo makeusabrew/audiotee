@@ -4,17 +4,19 @@ import Foundation
 /// CLI-specific output handler that writes raw PCM audio to stdout
 /// and lifecycle messages to stderr via the logger.
 class BinaryAudioOutputHandler: AudioOutputHandler {
-  private let flushAfterWrite: Bool
+  private let fd = STDOUT_FILENO
 
-  init(flushAfterWrite: Bool = false) {
-    self.flushAfterWrite = flushAfterWrite
-  }
-
-  func handleAudioPacket(_ packet: AudioPacket) {
-    // Write raw binary audio data directly to stdout
-    FileHandle.standardOutput.write(packet.data)
-    if flushAfterWrite {
-      fflush(stdout)
+  func handleAudioData(_ pointer: UnsafeRawPointer, count: Int) {
+    var written = 0
+    while written < count {
+      let result = write(fd, pointer.advanced(by: written), count - written)
+      if result >= 0 {
+        written += result
+      } else if errno == EINTR {
+        continue
+      } else {
+        break  // EPIPE, EIO, etc — consumer gone or real error
+      }
     }
   }
 
