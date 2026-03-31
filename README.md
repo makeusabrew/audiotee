@@ -162,6 +162,10 @@ There is no provision in the code to pre-emptively check for the required `NSAud
 
 If you want to check and/or request permissions ahead of time, check out [AudioCap's fantastic TCC probing approach](https://github.com/insidegui/AudioCap/blob/main/AudioCap/ProcessTap/AudioRecordingPermission.swift). 
 
+## Built with AudioTee
+
+<a href="https://talat.app"><img src="https://talat.app/favicon.svg" alt="talat" width="28" height="28" /></a>&ensp;**[talat](https://talat.app)** — private, local-only meeting transcription for macOS. Captures system audio via AudioTee and runs real-time speech recognition, speaker diarization, and searchable notes entirely on-device. [As featured in TechCrunch](https://techcrunch.com/2026/03/24/talats-ai-meeting-notes-stay-on-your-machine-not-in-the-cloud/).
+
 ## References / useful links
 
 - [Apple Core Audio Taps Documentation](https://developer.apple.com/documentation/coreaudio/capturing-system-audio-with-core-audio-taps)
