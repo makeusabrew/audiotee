@@ -27,14 +27,13 @@ public class AudioTapManager {
   public func setupAudioTap(with config: TapConfiguration) throws {
     AudioTeeLogging.logger.debug("Setting up audio tap manager")
 
-    tapID = try createSystemAudioTap(with: config)
-    deviceID = try createAggregateDevice()
+    let (createdTapID, tapUUID) = try createSystemAudioTap(with: config)
+    tapID = createdTapID
+    deviceID = try createAggregateDevice(tapUUID: tapUUID)
 
-    guard let tapID = tapID, let deviceID = deviceID else {
+    guard tapID != nil, deviceID != nil else {
       throw AudioTeeError.setupFailed
     }
-
-    try addTapToAggregateDevice(tapID: tapID, deviceID: deviceID)
 
     AudioTeeLogging.logger.debug("Audio tap manager setup complete")
   }
@@ -44,7 +43,7 @@ public class AudioTapManager {
     return deviceID
   }
 
-  private func createSystemAudioTap(with config: TapConfiguration) throws -> AudioObjectID {
+  private func createSystemAudioTap(with config: TapConfiguration) throws -> (AudioObjectID, String) {
     AudioTeeLogging.logger.debug("Creating tap description")
     let description = CATapDescription()
 
@@ -58,6 +57,9 @@ public class AudioTapManager {
     description.deviceUID = nil  // system default
     description.stream = 0  // first stream of output device
 
+    // Get the UUID from the description before creating the tap
+    let tapUUID = description.uuid.uuidString
+
     AudioTeeLogging.logger.debug(
       "Tap description configured",
       context: [
@@ -66,6 +68,7 @@ public class AudioTapManager {
         "mute": String(describing: description.muteBehavior),
         "mono": String(description.isMono),
         "exclusive": String(description.isExclusive),
+        "uuid": tapUUID,
       ])
 
     // Create the tap
@@ -97,20 +100,31 @@ public class AudioTapManager {
         ])
     }
 
-    return tapID
+    return (tapID, tapUUID)
   }
 
-  private func createAggregateDevice() throws -> AudioObjectID {
+  private func createAggregateDevice(tapUUID: String) throws -> AudioObjectID {
     let uid = UUID().uuidString
-    let description =
+
+    // Include the tap in the aggregate device creation dictionary using
+    // structured sub-tap dictionaries. This is required on macOS 26+ where
+    // adding the tap via AudioObjectSetPropertyData after creation no longer
+    // delivers audio data.
+    let tapList: [[String: Any]] = [
       [
-        kAudioAggregateDeviceNameKey: "audiotee-aggregate-device",
-        kAudioAggregateDeviceUIDKey: uid,
-        kAudioAggregateDeviceSubDeviceListKey: [] as CFArray,
-        kAudioAggregateDeviceMasterSubDeviceKey: 0,
-        kAudioAggregateDeviceIsPrivateKey: true,
-        kAudioAggregateDeviceIsStackedKey: false,
-      ] as [String: Any]
+        kAudioSubTapUIDKey: tapUUID,
+        kAudioSubTapDriftCompensationKey: true,
+      ]
+    ]
+
+    let description: [String: Any] = [
+      kAudioAggregateDeviceNameKey: "audiotee-aggregate-device",
+      kAudioAggregateDeviceUIDKey: uid,
+      kAudioAggregateDeviceTapListKey: tapList,
+      kAudioAggregateDeviceTapAutoStartKey: false,
+      kAudioAggregateDeviceIsPrivateKey: true,
+      kAudioAggregateDeviceIsStackedKey: false,
+    ]
 
     var deviceID: AudioObjectID = 0
     let status = AudioHardwareCreateAggregateDevice(description as CFDictionary, &deviceID)
@@ -122,31 +136,5 @@ public class AudioTapManager {
     }
 
     return deviceID
-  }
-
-  private func addTapToAggregateDevice(tapID: AudioObjectID, deviceID: AudioObjectID) throws {
-    // Get the tap's UID
-    var propertyAddress = getPropertyAddress(selector: kAudioTapPropertyUID)
-    var propertySize = UInt32(MemoryLayout<CFString>.stride)
-    var tapUID: CFString = "" as CFString
-    _ = withUnsafeMutablePointer(to: &tapUID) { tapUID in
-      AudioObjectGetPropertyData(tapID, &propertyAddress, 0, nil, &propertySize, tapUID)
-    }
-
-    // Add the tap to the aggregate device
-    propertyAddress = getPropertyAddress(
-      selector: kAudioAggregateDevicePropertyTapList)
-    let tapArray = [tapUID] as CFArray
-    propertySize = UInt32(MemoryLayout<CFArray>.stride)
-
-    let status = withUnsafePointer(to: tapArray) { ptr in
-      AudioObjectSetPropertyData(deviceID, &propertyAddress, 0, nil, propertySize, ptr)
-    }
-
-    guard status == kAudioHardwareNoError else {
-      AudioTeeLogging.logger.error(
-        "Failed to add tap to aggregate device", context: ["status": String(status)])
-      throw AudioTeeError.tapAssignmentFailed(status)
-    }
   }
 }
